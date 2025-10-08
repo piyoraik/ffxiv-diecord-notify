@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: monitoring
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: 8.5.11
+    helm:
+      releaseName: grafana
+      values: |
+        adminUser: admin
+        adminPassword: grafana-admin
+        persistence:
+          enabled: true
+          storageClassName: longhorn
+          size: 10Gi
+        service:
+          type: ClusterIP
+        grafana.ini:
+          server:
+            root_url: http://grafana.monitoring.svc.cluster.local
+          security:
+            allow_embedding: true
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              - name: Loki
+                type: loki
+                access: proxy
+                url: http://loki.monitoring.svc.cluster.local:3100
+                isDefault: true
+                jsonData:
+                  httpHeaderName1: X-Scope-OrgID
+                secureJsonData:
+                  httpHeaderValue1: anonymous
+        dashboardsConfigMaps: {}
+        sidecar:
+          dashboards:
+            enabled: true
+            label: grafana_dashboard
+            searchNamespace: ALL
+          datasources:
+            enabled: false
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 512Mi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

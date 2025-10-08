@@ -1,0 +1,36 @@
+name: Deploy Slash Commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      guildId:
+        description: 'Discord Guild ID (optional override)'
+        required: false
+        type: string
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+      DISCORD_GUILD_ID: ${{ inputs.guildId || secrets.DISCORD_GUILD_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Deploy slash commands
+        run: yarn deploy:commands
+        env:
+          DISCORD_TOKEN: ${{ env.DISCORD_TOKEN }}
+          DISCORD_CLIENT_ID: ${{ env.DISCORD_CLIENT_ID }}
+          DISCORD_GUILD_ID: ${{ env.DISCORD_GUILD_ID }}

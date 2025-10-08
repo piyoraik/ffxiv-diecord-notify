@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    namespace: monitoring
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 5.42.0
+    helm:
+      releaseName: loki
+      values: |
+        singleBinary:
+          replicas: 1
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 200m
+              memory: 512Mi
+          persistence:
+            enabled: true
+            size: 20Gi
+            storageClass: longhorn
+        loki:
+          service:
+            type: NodePort
+            nodePort: 31000
+            port: 3100
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          persistence:
+            storageClass: longhorn
+            storageClassName: longhorn
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2024-01-01"
+                store: boltdb-shipper
+                object_store: filesystem
+                schema: v12
+                index:
+                  prefix: index_
+                  period: 24h
+          compactor:
+            retention_enabled: true
+        monitoring:
+          serviceMonitor:
+            metricsInstance:
+              enabled: false
+          selfMonitoring:
+            enabled: false
+            grafanaAgent:
+              installOperator: false
+          metricsInstance:
+            enabled: false
+        lokiCanary:
+          enabled: true
+        chunksCache:
+          enableMemoryCache: true
+        test:
+          enabled: false
+        extraObjects:
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: loki-nodeport
+              labels:
+                app.kubernetes.io/name: loki
+                app.kubernetes.io/instance: loki
+                app.kubernetes.io/component: single-binary
+                app.kubernetes.io/managed-by: custom
+            spec:
+              type: NodePort
+              selector:
+                app.kubernetes.io/name: loki
+                app.kubernetes.io/instance: loki
+                app.kubernetes.io/component: single-binary
+              ports:
+                - name: http-metrics
+                  port: 3100
+                  targetPort: http-metrics
+                  protocol: TCP
+                  nodePort: 31000
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

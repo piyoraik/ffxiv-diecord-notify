@@ -1,0 +1,27 @@
+{
+  "name": "discord-ff14-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PoC Discord bot that summarizes FFXIV dungeon runs from log files.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "deploy:commands": "tsx src/registerCommands.ts",
+    "release": "standard-version"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "standard-version": "^9.5.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5"
+  }
+}
