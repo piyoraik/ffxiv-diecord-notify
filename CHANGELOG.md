@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.11](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.10...v0.1.11) (2025-10-08)
+
+
+### Features
+
+* DPS ([05098bc](https://github.com/piyoraik/ffxiv-diecord-notify/commit/05098bcb8fda1303ad99a0bca7cae94795712a69))
+
 ### [0.1.10](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.9...v0.1.10) (2025-10-08)
 
 
