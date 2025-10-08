@@ -28,7 +28,7 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 | `DISCORD_CHANNEL_ID` | 日次サマリを送信するチャンネル ID | CronJob / ジョブスクリプトで使用 |
 | `LOKI_BASE_URL` | Loki のエンドポイント | 例: `http://loki.monitoring.svc.cluster.local:3100` |
 | `LOKI_QUERY` | ラベルセレクタ | 例: `{content="ffxiv", instance="DESKTOP-LHEGLIC", job="ffxiv-dungeon"}` |
-| `LOKI_QUERY_FILTER` | フィルタ正規表現 | 例: `攻略を(開始|終了)した。` |
+| `LOKI_QUERY_FILTER` | 追加の Loki パイプ記述 | 例: `|~ "攻略を(開始|終了)した。"`。未指定なら全ログを取得 |
 | `LOKI_QUERY_LIMIT` | 取得上限件数 | 既定値 5000 |
 | `LOKI_DEBUG` | デバッグ出力フラグ | `true`/`false` |
 
@@ -105,7 +105,7 @@ yarn start
    ```
 
 - 初回に過去ログを再送したい場合は Fluentd 停止 → pos ファイル・バッファ削除 → 再起動
-- `LOKI_QUERY_FILTER` により「攻略を開始／終了した。」のみ抽出
+- `LOKI_QUERY_FILTER` を設定すると Loki クエリに追記されます（既定では無指定）。
 
 ---
 

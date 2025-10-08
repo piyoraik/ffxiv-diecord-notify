@@ -1,15 +1,18 @@
 import { fetchDailyCombat } from './services/combatAnalyzer.js';
+import { appSettings } from './config.js';
 import { type ActivityStatus, type CombatSegmentSummary, type DailyCombatSummary, type PlayerStats } from './types/combat.js';
 
+const TIME_ZONE = appSettings.timeZone();
+
 const dateFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Tokyo',
+  timeZone: TIME_ZONE,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit'
 });
 
 const timeFormatter = new Intl.DateTimeFormat('ja-JP', {
-  timeZone: 'Asia/Tokyo',
+  timeZone: TIME_ZONE,
   hour12: false,
   hour: '2-digit',
   minute: '2-digit'

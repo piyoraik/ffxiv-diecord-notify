@@ -1,15 +1,25 @@
-import { queryLogsInRange, type RawLokiEntry } from '../loki/client.js';
+import { queryLogsInRange } from '../loki/client.js';
+import { appSettings } from '../config.js';
+import {
+  parseEvents,
+  isStartEvent,
+  isEndEvent,
+  isDamageEvent,
+  isAbilityEvent,
+  type DamageEvent as ParsedDamageEvent,
+  type AbilityEvent as ParsedAbilityEvent,
+  type ParsedEvent
+} from '../parsers/events.js';
 import { DailyCombatSummary, CombatSegmentSummary, PlayerStats, ActivityStatus } from '../types/combat.js';
 
+const TIME_ZONE = appSettings.timeZone();
+
 const dateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Tokyo',
+  timeZone: TIME_ZONE,
   year: 'numeric',
   month: '2-digit',
   day: '2-digit'
 });
-
-const startRegex = /「(.+?)」の攻略を開始した。/;
-const endRegex = /「(.+?)」の攻略を終了した。/;
 
 interface SegmentWork {
   id: string;
@@ -25,26 +35,32 @@ interface SegmentWork {
   globalIndex: number;
 }
 
-interface DamageEvent {
-  timestampNs: bigint;
-  timestamp: Date;
-  actor: string | null;
-  target: string | null;
-  amount: number;
-  isCritical: boolean;
-  isDirect: boolean;
-}
+type MutablePlayerStats = {
+  name: string;
+  totalDamage: number;
+  hits: number;
+  criticalHits: number;
+  directHits: number;
+};
+
+const HOUR_IN_MS = 60 * 60 * 1000;
+const DAY_IN_MS = 24 * HOUR_IN_MS;
+const JST_OFFSET_MS = 9 * HOUR_IN_MS;
+const AGGREGATION_START_HOUR_JST = appSettings.aggregationStartHourJst();
+const AGGREGATION_START_OFFSET_MS = AGGREGATION_START_HOUR_JST * HOUR_IN_MS;
 
 export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCombatSummary> => {
   const { targetDate, startDate, endDate } = determineTimeWindow(requestedDate);
   const entries = await queryLogsInRange(startDate, endDate);
   entries.sort((a, b) => BigInt(a.timestampNs) < BigInt(b.timestampNs) ? -1 : 1);
 
-  const players = collectPlayerNames(entries);
-  const segments = buildSegments(entries);
-  const damageEvents = extractDamageEvents(entries);
+  const parsedEvents = parseEvents(entries);
+  const damageEvents = parsedEvents.filter(isDamageEvent) as ParsedDamageEvent[];
+  const abilityEvents = parsedEvents.filter(isAbilityEvent) as ParsedAbilityEvent[];
+  const playerNames = collectPlayerNames(abilityEvents, damageEvents);
+  const segments = buildSegments(parsedEvents);
 
-  attachDamageToSegments(segments, damageEvents, players);
+  attachDamageToSegments(segments, damageEvents, playerNames);
   assignOrdinals(segments);
 
   const summaries: CombatSegmentSummary[] = segments.map(seg => ({
@@ -71,7 +87,7 @@ const determineTimeWindow = (
 ): { targetDate: string; startDate: Date; endDate: Date } => {
   const targetDate = requestedDate ? sanitizeDate(requestedDate) : computePreviousDateInJst();
   const { year, month, day } = splitDate(targetDate);
-  const startUtcMs = Date.UTC(year, month - 1, day) - JST_OFFSET_MS;
+  const startUtcMs = Date.UTC(year, month - 1, day) - JST_OFFSET_MS + AGGREGATION_START_OFFSET_MS;
   const endUtcMs = startUtcMs + DAY_IN_MS;
   return {
     targetDate,
@@ -101,45 +117,40 @@ const splitDate = (value: string): { year: number; month: number; day: number } 
   return { year: y, month: m, day: d };
 };
 
-const collectPlayerNames = (entries: RawLokiEntry[]): Set<string> => {
+const collectPlayerNames = (
+  abilityEvents: ParsedAbilityEvent[],
+  damageEvents: ParsedDamageEvent[]
+): Set<string> => {
   const names = new Set<string>();
-  for (const entry of entries) {
-    const parts = entry.normalized.split('|');
-    if (parts[0] === '21') {
-      const sourceId = parts[2];
-      const sourceName = parts[3];
-      const targetId = parts[6];
-      const targetName = parts[7];
-      if (isPlayerId(sourceId) && sourceName) {
-        names.add(sourceName);
-      }
-      if (isPlayerId(targetId) && targetName) {
-        names.add(targetName);
-      }
+  abilityEvents.forEach(event => {
+    if (isPlayerId(event.sourceId) && event.sourceName) {
+      names.add(event.sourceName);
     }
-  }
+    if (isPlayerId(event.targetId) && event.targetName) {
+      names.add(event.targetName);
+    }
+  });
+  damageEvents.forEach(event => {
+    if (event.actor) {
+      names.add(event.actor);
+    }
+  });
   return names;
 };
 
-const buildSegments = (entries: RawLokiEntry[]): SegmentWork[] => {
+const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
   const segments: SegmentWork[] = [];
   const openByContent = new Map<string, SegmentWork[]>();
 
-  for (const entry of entries) {
-    const parts = entry.normalized.split('|');
-    if (parts[0] !== '00' || parts.length < 5) {
-      continue;
-    }
-    const message = parts[4];
-    const startMatch = startRegex.exec(message);
-    if (startMatch) {
-      const content = startMatch[1];
+  for (const event of events) {
+    if (isStartEvent(event)) {
+      const content = event.content;
       const segment: SegmentWork = {
-        id: `${entry.timestampNs}-${content}`,
+        id: `${event.timestampNs}-${content}`,
         content,
-        startNs: BigInt(entry.timestampNs),
+        startNs: event.timestampNs,
         endNs: null,
-        start: entry.timestamp,
+        start: event.timestamp,
         end: null,
         status: 'missing_end',
         players: [],
@@ -154,30 +165,28 @@ const buildSegments = (entries: RawLokiEntry[]): SegmentWork[] => {
       continue;
     }
 
-    const endMatch = endRegex.exec(message);
-    if (endMatch) {
-      const content = endMatch[1];
+    if (isEndEvent(event)) {
+      const content = event.content;
       const queue = openByContent.get(content);
       if (queue && queue.length > 0) {
         const segment = queue.shift()!;
-        segment.endNs = BigInt(entry.timestampNs);
-        segment.end = entry.timestamp;
+        segment.endNs = event.timestampNs;
+        segment.end = event.timestamp;
         segment.status = segment.startNs ? 'completed' : 'missing_start';
       } else {
-        const segment: SegmentWork = {
-          id: `end-${entry.timestampNs}-${content}`,
+        segments.push({
+          id: `end-${event.timestampNs}-${content}`,
           content,
           startNs: null,
-          endNs: BigInt(entry.timestampNs),
+          endNs: event.timestampNs,
           start: null,
-          end: entry.timestamp,
+          end: event.timestamp,
           status: 'missing_start',
           players: [],
           durationMs: null,
           ordinal: 0,
           globalIndex: 0
-        };
-        segments.push(segment);
+        });
       }
     }
   }
@@ -202,30 +211,9 @@ const buildSegments = (entries: RawLokiEntry[]): SegmentWork[] => {
   return segments;
 };
 
-const extractDamageEvents = (entries: RawLokiEntry[]): DamageEvent[] => {
-  const events: DamageEvent[] = [];
-  for (const entry of entries) {
-    const parts = entry.normalized.split('|');
-    if (parts[0] !== '00' || parts.length < 5) {
-      continue;
-    }
-    const message = parts[4];
-    const parsed = parseDamageMessage(message);
-    if (!parsed) {
-      continue;
-    }
-    events.push({
-      timestampNs: BigInt(entry.timestampNs),
-      timestamp: entry.timestamp,
-      ...parsed
-    });
-  }
-  return events;
-};
-
 const attachDamageToSegments = (
   segments: SegmentWork[],
-  damageEvents: DamageEvent[],
+  damageEvents: ParsedDamageEvent[],
   playerNames: Set<string>
 ): void => {
   segments.forEach((segment, index) => {
@@ -246,7 +234,7 @@ const attachDamageToSegments = (
       if (event.timestampNs < segment.startNs || event.timestampNs > segment.endNs) {
         continue;
       }
-      if (!event.actor || !playerNames.has(event.actor)) {
+      if (!event.actor) {
         continue;
       }
       const stats = contributions.get(event.actor) ?? {
@@ -291,62 +279,4 @@ const assignOrdinals = (segments: SegmentWork[]): void => {
   });
 };
 
-const parseDamageMessage = (
-  message: string
-): { actor: string | null; target: string | null; amount: number; isCritical: boolean; isDirect: boolean } | null => {
-  const cleaned = message
-    .replace(/\uE0BF/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const amountMatch = cleaned.match(/(?<amount>\d+)(?:\([^)]*\))?ダメージ。$/);
-  if (!amountMatch?.groups) {
-    return null;
-  }
-  const amount = Number.parseInt(amountMatch.groups.amount, 10);
-  const isCritical = cleaned.includes('クリティカル');
-  const isDirect = cleaned.includes('ダイレクトヒット');
-
-  const actorPattern = /^(?<actor>.+?)の攻撃(?: [^に]*)?\s*(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)?\s*(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
-  const directPattern = /^(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)\s*(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
-
-  const actorMatch = actorPattern.exec(cleaned);
-  if (actorMatch?.groups) {
-    const actor = actorMatch.groups.actor.trim();
-    const target = cleanupTarget(actorMatch.groups.target);
-    return { actor, target, amount, isCritical, isDirect };
-  }
-
-  const directMatch = directPattern.exec(cleaned);
-  if (directMatch?.groups) {
-    const target = cleanupTarget(directMatch.groups.target);
-    return { actor: null, target, amount, isCritical, isDirect };
-  }
-
-  const simplePattern = /^(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
-  const simpleMatch = simplePattern.exec(cleaned);
-  if (simpleMatch?.groups) {
-    const target = cleanupTarget(simpleMatch.groups.target);
-    return { actor: null, target, amount, isCritical, isDirect };
-  }
-
-  return null;
-};
-
-const cleanupTarget = (value: string): string =>
-  value
-    .replace(/は受け流した！/, '')
-    .replace(/はブロックした！/, '')
-    .trim();
-
 const isPlayerId = (id?: string): boolean => typeof id === 'string' && id.startsWith('10');
-
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-type MutablePlayerStats = {
-  name: string;
-  totalDamage: number;
-  hits: number;
-  criticalHits: number;
-  directHits: number;
-};

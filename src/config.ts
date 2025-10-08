@@ -11,6 +11,24 @@ const requiredEnv = (key: string): string => {
   return value;
 };
 
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
+
 // Discord 関連設定を遅延評価の関数にまとめる
 export const discordConfig = {
   token: () => requiredEnv('DISCORD_TOKEN'),
@@ -22,14 +40,19 @@ export const discordConfig = {
 export const lokiConfig = {
   baseUrl: () => process.env.LOKI_BASE_URL ?? 'http://loki.monitoring.svc.cluster.local:3100',
   query: () => process.env.LOKI_QUERY ?? '{content="ffxiv", instance="DESKTOP-LHEGLIC", job="ffxiv-dungeon"}',
-  filter: () => process.env.LOKI_QUERY_FILTER ?? '攻略を(開始|終了)した。',
+  filter: () => process.env.LOKI_QUERY_FILTER?.trim() || undefined,
   limit: (): number => {
-    const raw = process.env.LOKI_QUERY_LIMIT;
-    const parsed = raw ? Number.parseInt(raw, 10) : 5000;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
+    return parsePositiveInt(process.env.LOKI_QUERY_LIMIT, 5000);
   }
 };
 
 export const notificationConfig = {
   channelId: () => requiredEnv('DISCORD_CHANNEL_ID')
+};
+
+export const appSettings = {
+  timeZone: (): string => process.env.APP_TIME_ZONE?.trim() || 'Asia/Tokyo',
+  aggregationStartHourJst: (): number => clamp(parseNonNegativeInt(process.env.AGGREGATION_START_HOUR_JST, 10), 0, 23),
+  lokiChunkHardLimit: (): number => parsePositiveInt(process.env.LOKI_CHUNK_HARD_LIMIT, 5000),
+  lokiDebugEnabled: (): boolean => process.env.LOKI_DEBUG === 'true'
 };
