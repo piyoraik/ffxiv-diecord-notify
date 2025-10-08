@@ -1,48 +1,135 @@
-# Discord FF14 Log Summary Bot (PoC)
+# Discord FF14 Log Summary Bot
 
-PoC Discord bot that queries Loki for FFXIV network logs and returns a daily summary via a `/test` slash command. Implemented with Node.js 22, TypeScript, and discord.js.
+Loki に蓄積された FFXIV の攻略ログを取得し、Discord へ要約結果を通知する PoC ボットです。
+Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Fluentd・GitHub Actions を組み合わせて運用できる構成を想定しています。
 
-## Prerequisites
+---
 
-- Node.js 22+
-- Yarn 1 (installed via Corepack or standalone)
-- Discord bot application with a guild to register commands
+## 機能概要
 
-## Getting Started
+- `/test` スラッシュコマンド
+  - 任意日付（未指定時は前日 JST）の「攻略開始」「攻略終了」ログを突き合わせ、所要時間付きで返信
+  - `ephemeral` オプションにより、エフェメラル／通常返信を切り替え可能
+- 日次バッチ
+  - CronJob により毎日 10:00 JST に前日の攻略履歴を指定チャンネルへ自動投稿
+- Loki 連携
+  - ラベルセレクタ＋正規表現フィルタで攻略ログのみを取得
+  - デバッグ時は `LOKI_DEBUG=true` で詳細ログを標準出力へ出力
 
-1. Install dependencies:
+---
 
+## 必要な環境変数
+
+| 変数名 | 用途 | 備考 |
+| --- | --- | --- |
+| `DISCORD_TOKEN` | Discord Bot Token | Secret 推奨 |
+| `DISCORD_CLIENT_ID` | Discord アプリケーションの Client ID | Slash コマンド登録用 |
+| `DISCORD_GUILD_ID` | Slash コマンドを登録する Guild ID | 〃 |
+| `DISCORD_CHANNEL_ID` | 日次サマリを送信するチャンネル ID | CronJob / ジョブスクリプトで使用 |
+| `LOKI_BASE_URL` | Loki のエンドポイント | 例: `http://loki.monitoring.svc.cluster.local:3100` |
+| `LOKI_QUERY` | ラベルセレクタ | 例: `{content="ffxiv", instance="DESKTOP-LHEGLIC", job="ffxiv-dungeon"}` |
+| `LOKI_QUERY_FILTER` | フィルタ正規表現 | 例: `攻略を(開始|終了)した。` |
+| `LOKI_QUERY_LIMIT` | 取得上限件数 | 既定値 5000 |
+| `LOKI_DEBUG` | デバッグ出力フラグ | `true`/`false` |
+
+`.env.example` を `.env` にコピーし、上記を設定してください（`.env` は `.gitignore` 済み）。
+
+---
+
+## ローカル開発フロー
+
+1. **依存関係をインストール**
    ```bash
-yarn install
+   yarn install
    ```
-
-2. Copy the env template and fill in your Discord credentialsと Loki 接続情報:
-
+2. **Slash コマンドを登録**
    ```bash
-cp .env.example .env
-# edit .env to set DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID, LOKI_BASE_URL, LOKI_QUERY, LOKI_QUERY_FILTER
+   yarn deploy:commands
    ```
-
-3. Register the slash command (guild-scoped for faster propagation):
-
+3. **ボットを起動**
    ```bash
-yarn deploy:commands
-   ```
-
-4. Start the bot locally（`/test` 実行時に Loki のログを都度取得）:
-
-   ```bash
-yarn dev
-   ```
-
-   Alternatively, build and run the compiled output:
-
-   ```bash
+   yarn dev        # ホットリロード
+# もしくは
 yarn build
 yarn start
    ```
 
-## Docker Usage
+### `/test` コマンド例
+- `/test` … 前日 JST のサマリをエフェメラルで返信
+- `/test ephemeral:false` … 通常メッセージで返信
+- `/test date:2025-10-06` … 指定日のサマリをエフェメラルで返信
+- `/test date:2025-10-06 ephemeral:false` … 指定日＋通常メッセージ
+
+---
+
+## Fluentd 設定例（Windows）
+
+`fluentd/fluent.conf` には Tail → Loki 出力のサンプルを配置しています。
+
+```conf
+<source>
+  @type tail
+  path "C:\\Users\\Owner\\AppData\\Roaming\\Advanced Combat Tracker\\FFXIVLogs\\*.log"
+  pos_file "C:\\Users\\Owner\\work\\ffxiv_logs\\ffxiv.pos"
+  tag "ffxiv.logs"
+  read_from_head true
+  <parse>
+    @type multiline
+    format_firstline "/^\\d+\\|/"
+    format1 /^(?<prefix>\\d+)\|(?<timestamp>[^|]+)\|(?<code>[^|]*)\|(?<extra>[^|]*)\|(?<message>[^|]*)\|(?<uuid>.*)$/
+    time_format %Y-%m-%dT%H:%M:%S.%N%:z
+    time_key timestamp
+    keep_time_key true
+  </parse>
+</source>
+
+<filter ffxiv.logs>
+  @type record_transformer
+  enable_ruby false
+  <record>
+    job ffxiv-dungeon
+    instance DESKTOP-LHEGLIC
+  </record>
+</filter>
+
+<match ffxiv.logs>
+  @type loki
+  url "http://192.168.100.220:31000/loki/api/v1/push"
+  extra_labels {"content":"ffxiv"}
+  <buffer>
+    @type file
+    path "C:\\Users\\Owner\\work\\ffxiv_logs\\buffer"
+    flush_interval 5s
+  </buffer>
+</match>
+   ```
+
+- 初回に過去ログを再送したい場合は Fluentd 停止 → pos ファイル・バッファ削除 → 再起動
+- `LOKI_QUERY_FILTER` により「攻略を開始／終了した。」のみ抽出
+
+---
+
+## GitHub Actions
+
+1. **Build and Push Docker Image (`.github/workflows/ci.yml`)**
+   - `v*` タグの push をトリガーとして GHCR に `ghcr.io/<owner>/<repo>:<version>` と `:latest` をプッシュ
+2. **Deploy Slash Commands (`.github/workflows/deploy-commands.yml`)**
+   - 上記ワークフローが成功すると自動起動し、該当コミットで `yarn deploy:commands` を実行
+3. **Release (`.github/workflows/release.yml`)**
+   - 手動 (`workflow_dispatch`) で `standard-version` を実行し、CHANGELOG 更新＋タグ push＋GitHub Release 作成
+   - タグ push により 1. と 2. が連動
+
+### リリース手順（ローカル）
+1. Conventional Commits で実装を終えたら `git push`。Husky が `yarn release` → `git push --follow-tags --no-verify` を自動実行します。
+   - 初回 push 時は upstream が無い場合でもフック内で自動作成します。
+2. タグ push 後、Docker ビルドと Slash コマンド更新が自動で走ります。
+3. 手動で行いたい場合は `yarn release -- --release-as <type>` → `git push --follow-tags` でも可。
+
+必要な Secrets: `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`（GitHub Actions で使用）。
+
+---
+
+## Docker
 
 ```bash
 docker build -t ff14-log-bot .
@@ -51,47 +138,48 @@ docker run \
   ff14-log-bot
 ```
 
-## GitHub Actions
+プライベート GHCR を利用する場合は `docker login ghcr.io` と `ghcr-pull` Secret を Kubernetes へ作成してください。
 
-- **Build and Push Docker Image (`.github/workflows/ci.yml`)** — runs when a `v*` tag is pushed; builds and pushes `ghcr.io/<repo>:<version>` and `:latest`.
-- **Deploy Slash Commands (`.github/workflows/deploy-commands.yml`)** — triggered after the Docker workflow succeeds; checks out the release commit and runs `yarn deploy:commands` using the Discord credentials in repository secrets.
-- **Release (`.github/workflows/release.yml`)** — manual trigger; selects `patch`/`minor`/`major`, runs `yarn release` (powered by `standard-version`), pushes the version bump commit & tag, then drafts a GitHub Release. Set any additional secrets (e.g. `NPM_TOKEN`) before publishing to external registries.
+---
 
-### Releasing locally
+## Kubernetes マニフェスト
 
-1. Ensure commits follow Conventional Commits.
-2. Husky hooks will automatically run `yarn release && git push --follow-tags --no-verify` on `git push`. To run manually, execute `yarn release` (optionally with `--release-as <type>`).
-3. Once the tag is pushed (automatically or manually), the Docker workflow builds/pushes the image and the Deploy workflow updates slash commands.
+`k8s/manifests/` に以下を用意しています。
 
-## Kubernetes Deployment (example)
+| ファイル | 説明 |
+| --- | --- |
+| `configmap.yaml` | Loki 接続情報などの非秘匿設定 |
+| `secret.example.yaml` | Discord 認証情報のテンプレ。`secret.yaml` にコピーし実値を設定のうえ適用 |
+| `deployment.yaml` | ボット本体の Deployment。GHCR イメージ使用、`ghcr-pull` Secret を参照 |
+| `cronjob.yaml` | 毎日 10:00 JST に `node dist/jobs/dailySummary.js` を実行する CronJob |
 
-Manifests are provided under `k8s/manifests/`:
-
-- `configmap.yaml` — non-secret environment settings (Loki connection, etc.)
-- `secret.example.yaml` — copy to `secret.yaml`, populate Discord credentials, and apply as a Secret
-- `deployment.yaml` — single-replica Deployment referencing the GHCR image (`ghcr.io/<owner>/<repo>:latest` by default)
-  - expects a pre-created imagePullSecret named `ghcr-pull` for private GHCR access
-- `cronjob.yaml` — runs the daily summary sender (`node dist/jobs/dailySummary.js`) every day at 10:00 JST
-
+適用例:
 ```bash
 kubectl apply -f k8s/manifests/configmap.yaml
-kubectl apply -f k8s/manifests/secret.yaml   # created from secret.example.yaml
+kubectl apply -f k8s/manifests/secret.yaml   # secret.example.yaml から作成
 kubectl apply -f k8s/manifests/deployment.yaml
 kubectl apply -f k8s/manifests/cronjob.yaml
 ```
 
-Adjust `namespace`, image tag, and resource requests/limits as needed for your cluster.
+必要に応じて `namespace`、リソース要求、イメージタグ等を調整してください。
 
-## Slash Command Behaviour
+---
 
-- `/test` (optional `date` argument in `YYYY-MM-DD` format)
-  - Queries Loki with the configured label selector (default `{content="ffxiv", instance="DESKTOP-LHEGLIC", job="ffxiv-dungeon"}`) and regex filter (`攻略を(開始|終了)した。`)
-  - Pairs start/end entries such as `「王城旧跡 アンダーキープ」の攻略を開始した。`
-  - Returns a summary for the requested date (default: previous day in JST)
-  - Flags unmatched start or end entries in the response
+## ジョブ／ヘルパー
 
-## Notes & Next Steps
+- `src/jobs/dailySummary.ts` : Loki から前日分のログを取得し、`DISCORD_CHANNEL_ID` で指定したチャンネルへサマリを送信。CronJob・ローカル実行 (`yarn daily:summary`) 双方で利用。
+- `src/logParser.ts` : 開始／終了ログを突き合わせてサマリを生成するコアロジック。
+- `src/index.ts` : `/test` コマンドをハンドルし、必要に応じてエフェメラル返信を行う。
 
-- The parser assumes timestamps are in JST (`Asia/Tokyo`). Adjust the formatter if your log timestamps use a different offset.
-- Extend by wiring into Kubernetes CronJobs or adjusting the Loki query window to match production needs.
-- Add automated tests around the parser when transitioning beyond PoC.
+---
+
+## 制限事項と今後の改善
+
+- 2000 文字を超えるサマリは分割していません。必要に応じて複数メッセージ送信を実装してください。
+- テストコードは未整備です。ロジックの安定化に合わせてユニットテストを追加してください。
+- Fluentd の冪等制御や再送設計は PoC レベルです。商用利用では重複検知や監視を追加してください。
+- Loki のクエリは単一 PC 前提です。複数環境のログを扱う場合は ConfigMap でラベル条件を調整する必要があります。
+
+---
+
+ご不明点や改善要望があれば、お気軽にお知らせください。
