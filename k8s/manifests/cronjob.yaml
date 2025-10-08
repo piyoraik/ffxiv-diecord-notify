@@ -6,7 +6,7 @@ metadata:
   labels:
     app: discord-ff14-bot
 spec:
-  schedule: "0 1 * * *" # JST 10:00 (UTC+9)
+  schedule: "0 10 * * *" # JST 10:00 (UTC+9)
   timeZone: Asia/Tokyo
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

@@ -173,7 +173,12 @@ const buildQuery = (): string => {
   if (!filter) {
     return base;
   }
-  return `${base} ${filter.startsWith('|') ? '' : '|'}${filter}`;
+  const trimmed = filter.trim();
+  if (trimmed.startsWith('|')) {
+    return `${base} ${trimmed}`;
+  }
+  const escaped = trimmed.replace(/"/g, '\\"');
+  return `${base} |~ "${escaped}"`;
 };
 
 // デバッグログの出力制御を行う。
