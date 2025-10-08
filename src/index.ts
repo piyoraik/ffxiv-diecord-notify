@@ -1,6 +1,12 @@
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { Client, Events, GatewayIntentBits, type ChatInputCommandInteraction } from 'discord.js';
 import { discordConfig } from './config.js';
-import { formatSummaryMessage, summarizeLogsByDate } from './logParser.js';
+import {
+  fetchDailyCombatSummary,
+  formatDpsDetailMessage,
+  formatDpsListMessage,
+  formatSummaryMessage,
+  summarizeLogsByDate
+} from './logParser.js';
 
 const token = discordConfig.token();
 // ギルド関連イベントのみ要求する軽量クライアントを生成
@@ -16,10 +22,17 @@ client.on(Events.InteractionCreate, async interaction => {
   if (!interaction.isChatInputCommand()) {
     return;
   }
-  if (interaction.commandName !== 'test') {
+  if (interaction.commandName === 'test') {
+    await handleTestCommand(interaction);
     return;
   }
 
+  if (interaction.commandName === 'dps') {
+    await handleDpsCommand(interaction);
+  }
+});
+
+const handleTestCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
   const requestedDate = interaction.options.getString('date') ?? undefined;
   const ephemeral = interaction.options.getBoolean('ephemeral');
   const shouldUseEphemeral = ephemeral ?? true;
@@ -42,7 +55,57 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.reply({ content: `解析中にエラーが発生しました: ${description}`, ephemeral: shouldUseEphemeral });
     }
   }
-});
+};
+
+const handleDpsCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
+  const requestedDate = interaction.options.getString('date') ?? undefined;
+  const contentFilter = interaction.options.getString('content') ?? undefined;
+  const indexOption = interaction.options.getInteger('index');
+  const ephemeral = interaction.options.getBoolean('ephemeral');
+  const shouldUseEphemeral = ephemeral ?? true;
+
+  try {
+    await interaction.deferReply({ ephemeral: shouldUseEphemeral });
+    const daily = await fetchDailyCombatSummary(requestedDate);
+    let segments = daily.segments;
+    if (contentFilter) {
+      const lowered = contentFilter.toLowerCase();
+      segments = segments.filter(segment => segment.content.toLowerCase().includes(lowered));
+    }
+
+    if (segments.length === 0) {
+      await interaction.editReply('指定条件に合致する攻略ログが見つかりませんでした。');
+      return;
+    }
+
+    let selectedSegment = null;
+
+    if (typeof indexOption === 'number') {
+      if (indexOption < 1 || indexOption > segments.length) {
+        await interaction.editReply(`index は 1 〜 ${segments.length} の範囲で指定してください。`);
+        return;
+      }
+      selectedSegment = segments[indexOption - 1];
+    } else if (segments.length === 1) {
+      selectedSegment = segments[0];
+    } else {
+      const listMessage = formatDpsListMessage(daily.date, segments);
+      await interaction.editReply(listMessage);
+      return;
+    }
+
+    const detail = formatDpsDetailMessage(selectedSegment, daily.date);
+    await interaction.editReply(detail);
+  } catch (error) {
+    console.error('Failed to handle /dps command', error);
+    const description = error instanceof Error ? error.message : 'unknown error';
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(`解析中にエラーが発生しました: ${description}`);
+    } else {
+      await interaction.reply({ content: `解析中にエラーが発生しました: ${description}`, ephemeral: shouldUseEphemeral });
+    }
+  }
+};
 
 // Discord への接続に失敗した場合は異常終了
 client.login(token).catch(error => {

@@ -17,4 +17,32 @@ export const testCommand = new SlashCommandBuilder()
       .setRequired(false)
   );
 
-export const commandList = [testCommand];
+export const dpsCommand = new SlashCommandBuilder()
+  .setName('dps')
+  .setDescription('攻略ごとの DPS ランキングを表示します。')
+  .addStringOption(option =>
+    option
+      .setName('date')
+      .setDescription('対象日 (YYYY-MM-DD)。指定しない場合は最新日を使用します。')
+      .setRequired(false)
+  )
+  .addStringOption(option =>
+    option
+      .setName('content')
+      .setDescription('コンテンツ名で絞り込みます（部分一致）')
+      .setRequired(false)
+  )
+  .addIntegerOption(option =>
+    option
+      .setName('index')
+      .setDescription('同名コンテンツが複数ある場合の対象番号 (1 始まり)')
+      .setRequired(false)
+  )
+  .addBooleanOption(option =>
+    option
+      .setName('ephemeral')
+      .setDescription('true でエフェメラル返信、false で通常返信 (省略時は true)')
+      .setRequired(false)
+  );
+
+export const commandList = [testCommand, dpsCommand];
