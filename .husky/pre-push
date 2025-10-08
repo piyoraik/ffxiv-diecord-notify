@@ -1,4 +1,14 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-yarn release && git push --follow-tags --no-verify
+set -euo pipefail
+
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+if ! git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+  echo "[husky] upstream not set for ${CURRENT_BRANCH}. creating tracking branch..."
+  git push --set-upstream origin "${CURRENT_BRANCH}" --no-verify
+fi
+
+yarn release
+git push --follow-tags --no-verify
