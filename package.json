@@ -1,6 +1,6 @@
 {
   "name": "discord-ff14-bot",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "type": "module",
   "description": "PoC Discord bot that summarizes FFXIV dungeon runs from log files.",
