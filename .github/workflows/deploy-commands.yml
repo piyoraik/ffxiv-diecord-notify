@@ -1,28 +1,25 @@
 name: Deploy Slash Commands
 
 on:
-  workflow_dispatch:
-    inputs:
-      guildId:
-        description: 'Discord Guild ID (optional override)'
-        required: false
-        type: string
+  workflow_run:
+    workflows: ["Build and Push Docker Image"]
+    types:
+      - completed
 
 jobs:
-  register:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    env:
-      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
-      DISCORD_GUILD_ID: ${{ inputs.guildId || secrets.DISCORD_GUILD_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '22'
           cache: 'yarn'
 
       - name: Install dependencies
@@ -31,6 +28,6 @@ jobs:
       - name: Deploy slash commands
         run: yarn deploy:commands
         env:
-          DISCORD_TOKEN: ${{ env.DISCORD_TOKEN }}
-          DISCORD_CLIENT_ID: ${{ env.DISCORD_CLIENT_ID }}
-          DISCORD_GUILD_ID: ${{ env.DISCORD_GUILD_ID }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}

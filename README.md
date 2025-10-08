@@ -53,15 +53,15 @@ docker run \
 
 ## GitHub Actions
 
-- **CI (`.github/workflows/ci.yml`)** — runs on push / PR to `main`, installs dependencies, and executes `yarn build`.
-- **Deploy Slash Commands (`.github/workflows/deploy-commands.yml`)** — manual trigger; use repository secrets `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID` (or provide `guildId` input) and runs `yarn deploy:commands`.
+- **Build and Push Docker Image (`.github/workflows/ci.yml`)** — runs when a `v*` tag is pushed; builds and pushes `ghcr.io/<repo>:<version>` and `:latest`.
+- **Deploy Slash Commands (`.github/workflows/deploy-commands.yml`)** — triggered after the Docker workflow succeeds; checks out the release commit and runs `yarn deploy:commands` using the Discord credentials in repository secrets.
 - **Release (`.github/workflows/release.yml`)** — manual trigger; selects `patch`/`minor`/`major`, runs `yarn release` (powered by `standard-version`), pushes the version bump commit & tag, then drafts a GitHub Release. Set any additional secrets (e.g. `NPM_TOKEN`) before publishing to external registries.
 
 ### Releasing locally
 
 1. Ensure commits follow Conventional Commits.
-2. Run `yarn release` (optionally with `--release-as <type>`).
-3. `git push --follow-tags` and trigger Docker/GitHub releases as needed.
+2. Husky hooks will automatically run `yarn release && git push --follow-tags --no-verify` on `git push`. To run manually, execute `yarn release` (optionally with `--release-as <type>`).
+3. Once the tag is pushed (automatically or manually), the Docker workflow builds/pushes the image and the Deploy workflow updates slash commands.
 
 ## Slash Command Behaviour
 
