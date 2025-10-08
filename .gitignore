@@ -10,3 +10,4 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 *.log
+k8s/manifests/secret.yaml

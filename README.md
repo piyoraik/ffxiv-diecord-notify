@@ -63,6 +63,25 @@ docker run \
 2. Husky hooks will automatically run `yarn release && git push --follow-tags --no-verify` on `git push`. To run manually, execute `yarn release` (optionally with `--release-as <type>`).
 3. Once the tag is pushed (automatically or manually), the Docker workflow builds/pushes the image and the Deploy workflow updates slash commands.
 
+## Kubernetes Deployment (example)
+
+Manifests are provided under `k8s/manifests/`:
+
+- `configmap.yaml` — non-secret environment settings (Loki connection, etc.)
+- `secret.example.yaml` — copy to `secret.yaml`, populate Discord credentials, and apply as a Secret
+- `deployment.yaml` — single-replica Deployment referencing the GHCR image (`ghcr.io/<owner>/<repo>:latest` by default)
+  - expects a pre-created imagePullSecret named `ghcr-pull` for private GHCR access
+- `cronjob.yaml` — runs the daily summary sender (`node dist/jobs/dailySummary.js`) every day at 10:00 JST
+
+```bash
+kubectl apply -f k8s/manifests/configmap.yaml
+kubectl apply -f k8s/manifests/secret.yaml   # created from secret.example.yaml
+kubectl apply -f k8s/manifests/deployment.yaml
+kubectl apply -f k8s/manifests/cronjob.yaml
+```
+
+Adjust `namespace`, image tag, and resource requests/limits as needed for your cluster.
+
 ## Slash Command Behaviour
 
 - `/test` (optional `date` argument in `YYYY-MM-DD` format)

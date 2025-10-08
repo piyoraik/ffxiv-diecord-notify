@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: discord-ff14-bot-config
+  namespace: discord-bot
+  labels:
+    app: discord-ff14-bot
+data:
+  LOKI_BASE_URL: "http://loki.monitoring.svc.cluster.local:3100"
+  LOKI_QUERY: "{content=\"ffxiv\", instance=\"DESKTOP-LHEGLIC\", job=\"ffxiv-dungeon\"}"
+  LOKI_QUERY_FILTER: "攻略を(開始|終了)した。"
+  LOKI_QUERY_LIMIT: "5000"
+  LOKI_DEBUG: "false"

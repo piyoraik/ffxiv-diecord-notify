@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "deploy:commands": "tsx src/registerCommands.ts",
+    "daily:summary": "tsx src/jobs/dailySummary.ts",
     "release": "standard-version --no-verify",
     "prepare": "husky install"
   },

@@ -29,3 +29,7 @@ export const lokiConfig = {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 5000;
   }
 };
+
+export const notificationConfig = {
+  channelId: () => requiredEnv('DISCORD_CHANNEL_ID')
+};

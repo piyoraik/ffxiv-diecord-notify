@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discord-ff14-bot
+  namespace: discord-bot
+  labels:
+    app: discord-ff14-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: discord-ff14-bot
+  template:
+    metadata:
+      labels:
+        app: discord-ff14-bot
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: bot
+          image: ghcr.io/piyoraik/ffxiv-diecord-notify:latest
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: discord-ff14-bot-secrets
+            - configMapRef:
+                name: discord-ff14-bot-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      restartPolicy: Always

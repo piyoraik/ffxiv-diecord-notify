@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: discord-ff14-bot-daily
+  namespace: discord-bot
+  labels:
+    app: discord-ff14-bot
+spec:
+  schedule: "0 1 * * *" # JST 10:00 (UTC+9)
+  timeZone: Asia/Tokyo
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: discord-ff14-bot
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-pull
+          containers:
+            - name: bot-daily
+              image: ghcr.io/piyoraik/ffxiv-diecord-notify:latest
+              imagePullPolicy: Always
+              command: ["node", "dist/jobs/dailySummary.js"]
+              env:
+                - name: TZ
+                  value: Asia/Tokyo
+              envFrom:
+                - secretRef:
+                    name: discord-ff14-bot-secrets
+                - configMapRef:
+                    name: discord-ff14-bot-config
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
