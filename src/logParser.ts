@@ -1,6 +1,8 @@
 import { fetchDailyCombat } from './services/combatAnalyzer.js';
 import { appSettings } from './config.js';
 import { type ActivityStatus, type CombatSegmentSummary, type DailyCombatSummary, type PlayerStats } from './types/combat.js';
+import { roleForJobCode } from './jobs.js';
+import { replaceJobTagsWithEmojis } from './emoji.js';
 
 const TIME_ZONE = appSettings.timeZone();
 
@@ -92,7 +94,8 @@ export const summarizeLogsByDate = async (requestedDate?: string): Promise<Summa
  */
 export const formatSummaryMessage = (
   summary: DailySummary,
-  availableDates: string[]
+  availableDates: string[],
+  opts?: { rosterNames?: Set<string>; guild?: { id: string; emojis: { cache: Map<any, any> } } }
 ): string => {
   const lines: string[] = [];
   lines.push(`📅 ${summary.date} の攻略履歴`);
@@ -101,6 +104,14 @@ export const formatSummaryMessage = (
   } else {
     summary.entries.forEach(entry => {
       lines.push(renderSummaryEntry(entry));
+      // 登録プレイヤーの参加があれば併記
+      if (opts?.rosterNames && entry.players.length > 0) {
+        const matched = entry.players.filter(p => opts.rosterNames!.has(p.name));
+        if (matched.length > 0) {
+          const parts = matched.map(p => renderPlayerLabel(p));
+          lines.push(`  参加（登録者）: ${parts.join(', ')}`);
+        }
+      }
     });
   }
   if (summary.issues.length > 0) {
@@ -110,7 +121,8 @@ export const formatSummaryMessage = (
   if (availableDates.length > 1) {
     lines.push(`📚 利用可能な日付: ${availableDates.join(', ')}`);
   }
-  return lines.join('\n');
+  const text = lines.join('\n');
+  return replaceJobTagsWithEmojis(text, (opts as any)?.guild ?? null);
 };
 
 /**
@@ -120,7 +132,8 @@ export const formatSummaryMessage = (
  */
 export const formatDpsListMessage = (
   date: string,
-  segments: CombatSegmentSummary[]
+  segments: CombatSegmentSummary[],
+  opts?: { guild?: { id: string; emojis: { cache: Map<any, any> } } } // 簡易型（handlers からのみ利用）
 ): string => {
   const lines: string[] = [];
   lines.push(`📊 ${date} の攻略一覧`);
@@ -130,11 +143,13 @@ export const formatDpsListMessage = (
     const start = segment.start ? timeFormatter.format(segment.start) : '??:??';
     const end = segment.end ? timeFormatter.format(segment.end) : '??:??';
     const top = segment.players[0];
-    const topInfo = top ? ` / Top: ${top.name} ${Math.round(top.dps)} DPS` : '';
+    const topInfo = top ? ` / Top: ${renderPlayerLabel(top)} ${Math.round(top.dps)} DPS` : '';
     lines.push(`${label} (${start}〜${end} / ${duration})${topInfo}`);
   });
   lines.push('`index` オプションで対象番号を指定してください。');
-  return lines.join('\n');
+  const text = lines.join('\n');
+  // ギルド絵文字が使える場合は [JOB] を置換
+  return replaceJobTagsWithEmojis(text, (opts as any)?.guild ?? null);
 };
 
 /**
@@ -144,7 +159,8 @@ export const formatDpsListMessage = (
  */
 export const formatDpsDetailMessage = (
   segment: CombatSegmentSummary,
-  date: string
+  date: string,
+  opts?: { guild?: { id: string; emojis: { cache: Map<any, any> } } }
 ): string => {
   const lines: string[] = [];
   const header = `📊 ${date} 「${segment.content}」 #${segment.ordinal}`;
@@ -162,11 +178,12 @@ export const formatDpsDetailMessage = (
   lines.push('DPSランキング:');
   segment.players.forEach((player, idx) => {
     lines.push(
-      `  ${idx + 1}. ${player.name} ${Math.round(player.dps)} DPS (総ダメージ ${player.totalDamage}, ヒット ${player.hits})`
+      `  ${idx + 1}. ${renderPlayerLabel(player)} ${Math.round(player.dps)} DPS (総ダメージ ${player.totalDamage}, ヒット ${player.hits})`
     );
   });
 
-  return lines.join('\n');
+  const text = lines.join('\n');
+  return replaceJobTagsWithEmojis(text, (opts as any)?.guild ?? null);
 };
 
 export const fetchDailyCombatSummary = fetchDailyCombat;
@@ -212,7 +229,7 @@ const renderSummaryEntry = (entry: SummaryEntry): string => {
   const topPlayers = entry.players.slice(0, 3);
   if (topPlayers.length > 0) {
     const extras = topPlayers
-      .map((player, idx) => `    ${idx + 1}. ${player.name} ${Math.round(player.dps)} DPS (総 ${player.totalDamage})`)
+      .map((player, idx) => `    ${idx + 1}. ${renderPlayerLabel(player)} ${Math.round(player.dps)} DPS (総 ${player.totalDamage})`)
       .join('\n');
     return `${line}\n${extras}`;
   }
@@ -243,3 +260,11 @@ const formatDuration = (durationMs: number): string => {
  * JST タイムゾーンでの日付を YYYY-MM-DD で返す。
  */
 export const formatDateJst = (date: Date): string => dateFormatter.format(date);
+
+// 表示ラベル: 役割絵文字 + [JOB] + 名前（jobCode が無ければ名前のみ）
+const renderPlayerLabel = (player: PlayerStats): string => {
+  if (!player.jobCode) return player.name;
+  const role = roleForJobCode(player.jobCode);
+  const roleEmoji = role === 'T' ? '🛡️' : role === 'H' ? '🩹' : role === 'D' ? '⚔️' : '';
+  return `${roleEmoji ? roleEmoji + ' ' : ''}[${player.jobCode}] ${player.name}`;
+};

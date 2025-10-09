@@ -8,12 +8,14 @@ import {
   isAbilityEvent,
   isAddCombatantEvent,
   isRemoveCombatantEvent,
+  isAttributeAddEvent,
   type DamageEvent as ParsedDamageEvent,
   type AbilityEvent as ParsedAbilityEvent,
   type AddCombatantEvent,
   type RemoveCombatantEvent,
   type ExtendedParsedEvent
 } from '../parsers/events.js';
+import { jobCodeForId, roleForJobCode } from '../jobs.js';
 import { DailyCombatSummary, CombatSegmentSummary, PlayerStats, ActivityStatus } from '../types/combat.js';
 
 const TIME_ZONE = appSettings.timeZone();
@@ -69,11 +71,13 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
   const abilityEvents = parsedEvents.filter(isAbilityEvent) as ParsedAbilityEvent[];
   const addEvents = parsedEvents.filter(isAddCombatantEvent) as AddCombatantEvent[];
   const removeEvents = parsedEvents.filter(isRemoveCombatantEvent) as RemoveCombatantEvent[];
+  const attrAddEvents = parsedEvents.filter(isAttributeAddEvent);
+  const { idToJobCode, nameToJobCode } = buildPlayerRegistry(addEvents, attrAddEvents);
   const playerNames = collectPlayerNames(abilityEvents, damageEvents, addEvents);
   const segments = buildSegments(parsedEvents);
 
   assignParticipants(segments, addEvents, removeEvents);
-  attachDamageToSegments(segments, damageEvents, playerNames);
+  attachDamageToSegments(segments, damageEvents, playerNames, nameToJobCode);
   assignOrdinals(segments);
 
   const summaries: CombatSegmentSummary[] = segments.map(seg => ({
@@ -187,6 +191,7 @@ const assignParticipants = (
   removeEvents: RemoveCombatantEvent[]
 ): void => {
   const idToName = new Map<string, string>();
+  const idToJobCode = new Map<string, string | undefined>();
   addEvents.forEach(a => {
     if (a.combatantId && a.combatantName) {
       idToName.set(a.combatantId, a.combatantName);
@@ -216,6 +221,34 @@ const assignParticipants = (
     }
     seg.participants = Array.from(set);
   });
+};
+
+/**
+ * 03/261 Add からプレイヤーの JobCode を構築する。
+ */
+const buildPlayerRegistry = (
+  addEvents: AddCombatantEvent[],
+  attrAddEvents: ReturnType<typeof parseEvents> extends Array<infer T> ? T[] : never
+) => {
+  const idToJobCode = new Map<string, string>();
+  const idToName = new Map<string, string>();
+  const nameToJobCode = new Map<string, string>();
+
+  addEvents.forEach(a => {
+    if (a.combatantId && a.combatantName) idToName.set(a.combatantId, a.combatantName);
+  });
+
+  for (const e of attrAddEvents as any[]) {
+    if (e?.type !== 'attrAdd') continue;
+    const code = jobCodeForId(e.jobId);
+    const name = e.combatantName || idToName.get(e.combatantId);
+    if (code) {
+      idToJobCode.set(e.combatantId, code);
+      if (name) nameToJobCode.set(name, code);
+    }
+  }
+
+  return { idToJobCode, nameToJobCode };
 };
 
 /**
@@ -302,7 +335,8 @@ const buildSegments = (events: ExtendedParsedEvent[]): SegmentWork[] => {
 const attachDamageToSegments = (
   segments: SegmentWork[],
   damageEvents: ParsedDamageEvent[],
-  playerNames: Set<string>
+  playerNames: Set<string>,
+  nameToJobCode: Map<string, string> = new Map()
 ): void => {
   segments.forEach((segment, index) => {
     segment.globalIndex = index + 1;
@@ -344,14 +378,20 @@ const attachDamageToSegments = (
     }
 
     const players: PlayerStats[] = Array.from(contributions.values())
-      .map(stats => ({
-        name: stats.name,
-        totalDamage: stats.totalDamage,
-        hits: stats.hits,
-        criticalHits: stats.criticalHits,
-        directHits: stats.directHits,
-        dps: Number((stats.totalDamage / durationSeconds).toFixed(2))
-      }))
+      .map(stats => {
+        const jobCode = nameToJobCode.get(stats.name);
+        const role = roleForJobCode(jobCode);
+        return ({
+          name: stats.name,
+          totalDamage: stats.totalDamage,
+          hits: stats.hits,
+          criticalHits: stats.criticalHits,
+          directHits: stats.directHits,
+          dps: Number((stats.totalDamage / durationSeconds).toFixed(2)),
+          jobCode,
+          role
+        });
+      })
       .sort((a, b) => b.totalDamage - a.totalDamage);
 
     segment.players = players;

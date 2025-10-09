@@ -13,6 +13,8 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 - `/dps` スラッシュコマンド
   - 同日内の各攻略に対してプレイヤーごとの DPS ランキングを表示
   - `content`（部分一致）や `index`（複数合致時の番号指定）で絞り込み
+- `/version` スラッシュコマンド
+  - Bot のバージョンとビルド日時（JST; 既定 `Asia/Tokyo`）を表示
 - 日次バッチ
   - CronJob により毎日 10:00 JST に前日の攻略履歴を指定チャンネルへ自動投稿
 - Loki 連携
@@ -37,6 +39,9 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 | `APP_TIME_ZONE` | 表示・整形に使用するタイムゾーン | 既定値 `Asia/Tokyo` |
 | `AGGREGATION_START_HOUR_JST` | 集計開始時刻（JST 時） | 既定値 `10` |
 | `AGGREGATION_END_HOUR_JST` | 集計終了時刻（JST 時） | 既定値 `10`（=開始から24h） |
+| `DATABASE_URL` | PostgreSQL 接続URL | 例: `postgres://user:pass@host:5432/dbname`（優先） |
+| `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` | PostgreSQL 接続（個別指定） | `DATABASE_URL` 未設定時に使用 |
+| `PGSSLMODE` | SSL モード | 例: `require`（クラスタ仕様に合わせて設定） |
 
 `.env.example` を `.env` にコピーし、上記を設定してください（`.env` は `.gitignore` 済み）。
 
@@ -57,8 +62,13 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
    yarn dev        # ホットリロード
 # もしくは
 yarn build
-yarn start
+   yarn start
    ```
+
+4. **push 前にローカルテスト（Husky）**
+   - `git push` 時に `yarn build && yarn test` を自動実行（`.husky/pre-push`）
+   - ローカルに `logs/logs.json` があれば実ログ回帰も実行されます
+   - 実ログを使わず高速に回したい場合は `LOGS_JSON_PATH=__missing__ git push` で実ログ回帰のみ skip できます
 
 ### `/test` コマンド例
 - `/test` … 前日 JST のサマリをエフェメラルで返信
@@ -198,6 +208,14 @@ kubectl apply -f k8s/manifests/cronjob.yaml
 - `src/registerCommands.ts` : コマンド登録ロジック（`registerCommands`/`registerCommandsWith`）。
 - `src/registerCommands.main.ts` : コマンド登録エントリポイント（`yarn deploy:commands` で実行）。
 
+### バージョン表示（/version）とビルド日時
+- `/version` は `package.json` の `version` とビルド日時を表示します
+  - 表示タイムゾーンは `APP_TIME_ZONE`（既定 `Asia/Tokyo`）に従い、JST なら `YYYY-MM-DD HH:mm:ss JST`
+- ビルド日時の注入方法
+  - Docker で `--build-arg BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)` を指定
+  - CI ではワークフローが自動で `BUILD_TIMESTAMP` を付与します
+  - 未指定時は実行時刻（現在時刻）を表示します
+
 ### 集計期間（JST）の定義
 - `AGGREGATION_START_HOUR_JST` と `AGGREGATION_END_HOUR_JST` により、「JST X:00 〜 （必要なら翌日へ）JST Y:00」を定義。
 - 例: `10` と `8` → 「JST 10:00 〜 翌日 08:00」。
@@ -241,3 +259,6 @@ kubectl apply -f k8s/manifests/cronjob.yaml
 ---
 
 ご不明点や改善要望があれば、お気軽にお知らせください。
+- データベース接続（PostgreSQL）
+  - `DATABASE_URL` もしくは `PGHOST/PGUSER/PGPASSWORD/PGDATABASE/PGPORT` を設定
+  - K8s では `k8s/manifests/secret.example.yaml` にサンプルあり（Secret へ反映し `envFrom` で読み込み）

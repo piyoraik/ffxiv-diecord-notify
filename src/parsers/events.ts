@@ -23,7 +23,17 @@ export interface RemoveCombatantEvent extends BaseEvent {
 export type ExtendedParsedEvent =
   | ParsedEvent
   | AddCombatantEvent
-  | RemoveCombatantEvent;
+  | RemoveCombatantEvent
+  | AttributeAddEvent;
+
+/** 261 Add（属性列挙）イベント。Name/Job などの属性を保持。 */
+export interface AttributeAddEvent extends BaseEvent {
+  type: 'attrAdd';
+  combatantId: string;
+  combatantName: string;
+  jobId?: number;
+  attributes: Record<string, string>;
+}
 
 /**
  * すべてのイベントに共通のフィールド。
@@ -110,6 +120,8 @@ const parseEntry = (entry: RawLokiEntry): ExtendedParsedEvent | ExtendedParsedEv
       return parseAddCombatant(entry, parts);
     case '04':
       return parseRemoveCombatant(entry, parts);
+    case '261':
+      return parseAttributeAdd(entry, parts);
     case '21':
     case '22':
       return parseStructuredAbility(entry, parts, stream);
@@ -200,6 +212,36 @@ const parseRemoveCombatant = (entry: RawLokiEntry, parts: string[]): RemoveComba
     combatantId,
     combatantName
   } satisfies RemoveCombatantEvent;
+};
+
+/**
+ * 261 Add の属性列挙を解釈し、Name/Job を抽出する。
+ * 形式例: 261|...|Add|<ID>|Key|Val|Key|Val|...|Name|<name>|...|Job|<num>|...
+ */
+const parseAttributeAdd = (entry: RawLokiEntry, parts: string[]): AttributeAddEvent | null => {
+  if (parts.length < 6) return null;
+  const kind = parts[2];
+  if (kind !== 'Add') return null;
+  const combatantId = parts[3] ?? '';
+  const attributes: Record<string, string> = {};
+  for (let i = 4; i + 1 < parts.length; i += 2) {
+    const k = parts[i];
+    const v = parts[i + 1];
+    if (k) attributes[k] = v ?? '';
+  }
+  const combatantName = attributes['Name'] ?? '';
+  const jobIdStr = attributes['Job'];
+  const jobId = jobIdStr && /^\d+$/.test(jobIdStr) ? Number.parseInt(jobIdStr, 10) : undefined;
+  return {
+    type: 'attrAdd',
+    entry,
+    timestampNs: BigInt(entry.timestampNs),
+    timestamp: entry.timestamp,
+    combatantId,
+    combatantName,
+    jobId,
+    attributes
+  } satisfies AttributeAddEvent;
 };
 
 /**
@@ -338,3 +380,6 @@ export const isAddCombatantEvent = (event: ExtendedParsedEvent): event is AddCom
 /** Type Guard: RemoveCombatant */
 export const isRemoveCombatantEvent = (event: ExtendedParsedEvent): event is RemoveCombatantEvent =>
   (event as any).type === 'removeCombatant';
+/** Type Guard: 261 Add attributes */
+export const isAttributeAddEvent = (event: ExtendedParsedEvent): event is AttributeAddEvent =>
+  (event as any).type === 'attrAdd';

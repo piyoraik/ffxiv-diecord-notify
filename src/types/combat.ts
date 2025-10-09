@@ -16,6 +16,8 @@ export interface PlayerStats {
   hits: number;
   criticalHits: number;
   directHits: number;
+  jobCode?: string;
+  role?: 'T' | 'H' | 'D';
 }
 
 /**

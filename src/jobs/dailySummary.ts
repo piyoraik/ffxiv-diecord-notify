@@ -1,6 +1,8 @@
 import { Client, GatewayIntentBits, TextChannel } from 'discord.js';
 import { discordConfig, notificationConfig } from '../config.js';
 import { formatSummaryMessage, summarizeLogsByDate } from '../logParser.js';
+import { listRoster } from '../db/roster.js';
+import { replaceJobTagsWithEmojis } from '../emoji.js';
 
 /**
  * 依存関係を受け取り、日次サマリ投稿を実行する（テスト/実行兼用）。
@@ -26,7 +28,11 @@ export const runDailySummaryWithClient = async (
       return;
     }
 
-    const message = format(summary, availableDates);
+    const guild = (channel as TextChannel).guild;
+    const roster = await listRoster(guild.id);
+    const rosterNames = new Set(roster.map(r => r.name));
+    let message = format(summary, availableDates, { rosterNames, guild: guild as any });
+    message = replaceJobTagsWithEmojis(message, guild);
     await (channel as unknown as TextChannel).send(message);
   } finally {
     await client.destroy();

@@ -1,4 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
+import { jobCodeForId } from './jobs.js';
 
 /**
  * `/test` コマンド定義（任意の日付引数を受け取り日次サマリを返す）。
@@ -65,5 +66,27 @@ export const versionCommand = new SlashCommandBuilder()
   .setName('version')
   .setDescription('このボットのバージョンを表示します。');
 
-// 既存の配列に追加
-export const commandList = [testCommand, dpsCommand, versionCommand];
+// 既存の配列に追加（最終的な一覧は末尾で公開）
+
+/**
+ * `/roster` コマンド定義（誰でも登録可能）。
+ */
+export const rosterCommand = new SlashCommandBuilder()
+  .setName('roster')
+  .setDescription('プレイヤー登録/管理')
+  .addSubcommand(sub =>
+    sub
+      .setName('register')
+      .setDescription('プレイヤーを登録します')
+      .addStringOption(opt => opt.setName('name').setDescription('ゲーム内のプレイヤー名').setRequired(true))
+      .addStringOption(opt => opt.setName('emoji').setDescription('任意: 絵文字タグ <...>').setRequired(false))
+  )
+  .addSubcommand(sub =>
+    sub
+      .setName('unregister')
+      .setDescription('プレイヤーを削除します')
+      .addStringOption(opt => opt.setName('name').setDescription('ゲーム内のプレイヤー名').setRequired(true))
+  )
+  .addSubcommand(sub => sub.setName('list').setDescription('登録済みプレイヤー一覧'));
+
+export const commandList = [testCommand, dpsCommand, versionCommand, rosterCommand];

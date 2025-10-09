@@ -12,6 +12,8 @@ import {
   formatDpsDetailMessage,
   fetchDailyCombatSummary
 } from '../logParser.js';
+import { replaceJobTagsWithEmojis } from '../emoji.js';
+import { upsertRoster, deleteRoster, listRoster } from '../db/roster.js';
 
 /**
  * `/test` コマンドの実装（依存注入版）。
@@ -31,11 +33,15 @@ export const handleTestCommandWith = async (
   try {
     await interaction.deferReply({ ephemeral: shouldUseEphemeral });
     const { summary, availableDates } = await deps.summarize(requestedDate);
+    const roster = interaction.guild ? await listRoster(interaction.guild.id) : [];
+    const rosterNames = new Set(roster.map(r => r.name));
     if (!summary) {
       await interaction.editReply('Loki から対象日のログが見つかりませんでした。設定を確認してください。');
       return;
     }
-    const message = deps.format(summary, availableDates);
+    let message = deps.format(summary, availableDates, { rosterNames, guild: interaction.guild as any });
+    // 可能ならギルド絵文字へ置換
+    message = replaceJobTagsWithEmojis(message, interaction.guild ?? null);
     await interaction.editReply({ content: message });
   } catch (error) {
     const description = error instanceof Error ? error.message : 'unknown error';
@@ -99,12 +105,12 @@ export const handleDpsCommandWith = async (
     } else if (segments.length === 1) {
       selectedSegment = segments[0];
     } else {
-      const listMessage = deps.formatList(daily.date, segments);
+      const listMessage = deps.formatList(daily.date, segments, { guild: interaction.guild as any });
       await interaction.editReply(listMessage);
       return;
     }
 
-    const detail = deps.formatDetail(selectedSegment, daily.date);
+    const detail = deps.formatDetail(selectedSegment, daily.date, { guild: interaction.guild as any });
     await interaction.editReply(detail);
   } catch (error) {
     const description = error instanceof Error ? error.message : 'unknown error';
@@ -158,4 +164,44 @@ export const handleVersionCommand = async (interaction: ChatInputCommandInteract
     // keep original builtAt string
   }
   await interaction.reply({ content: `version: v${version} (built: ${builtLocal})`, ephemeral: true });
+};
+
+/**
+ * `/roster` コマンド: 誰でも登録可能。
+ */
+export const handleRosterCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
+  const sub = interaction.options.getSubcommand();
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply({ content: 'ギルド内でのみ使用できます。', ephemeral: true });
+    return;
+  }
+  try {
+    if (sub === 'register') {
+      const name = interaction.options.getString('name', true).trim();
+      const emoji = interaction.options.getString('emoji') ?? undefined;
+      await upsertRoster(guild.id, name, undefined, emoji, interaction.user.id);
+      await interaction.reply({ content: `登録しました: ${emoji ? emoji + ' ' : ''}${name}`, ephemeral: true });
+      return;
+    }
+    if (sub === 'unregister') {
+      const name = interaction.options.getString('name', true).trim();
+      await deleteRoster(guild.id, name);
+      await interaction.reply({ content: `削除しました: ${name}`, ephemeral: true });
+      return;
+    }
+    if (sub === 'list') {
+      const rows = await listRoster(guild.id);
+      if (rows.length === 0) {
+        await interaction.reply({ content: '登録はありません。', ephemeral: true });
+        return;
+      }
+      const lines = rows.map(r => `${r.emoji ? r.emoji + ' ' : ''}${r.jobCode ? `[${r.jobCode}] ` : ''}${r.name}`);
+      await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+      return;
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'unknown error';
+    await interaction.reply({ content: `処理に失敗しました: ${msg}`, ephemeral: true });
+  }
 };
