@@ -1,23 +1,32 @@
 import type { RawLokiEntry } from '../loki/client.js';
 
+/**
+ * パースされたイベントの共用型。
+ */
 export type ParsedEvent = StartEvent | EndEvent | DamageEvent | AbilityEvent | UnknownEvent;
 
+/**
+ * すべてのイベントに共通のフィールド。
+ */
 export interface BaseEvent {
   entry: RawLokiEntry;
   timestampNs: bigint;
   timestamp: Date;
 }
 
+/** 攻略開始イベント */
 export interface StartEvent extends BaseEvent {
   type: 'start';
   content: string;
 }
 
+/** 攻略終了イベント */
 export interface EndEvent extends BaseEvent {
   type: 'end';
   content: string;
 }
 
+/** 与ダメージイベント（メッセージ/構造化の両方から発生） */
 export interface DamageEvent extends BaseEvent {
   type: 'damage';
   actor: string | null;
@@ -28,6 +37,7 @@ export interface DamageEvent extends BaseEvent {
   source: 'message';
 }
 
+/** アビリティ発動イベント（構造化ログ由来） */
 export interface AbilityEvent extends BaseEvent {
   type: 'ability';
   sourceId: string;
@@ -38,6 +48,7 @@ export interface AbilityEvent extends BaseEvent {
   abilityName: string;
 }
 
+/** 型に合致しないイベント */
 export interface UnknownEvent extends BaseEvent {
   type: 'unknown';
 }
@@ -45,6 +56,10 @@ export interface UnknownEvent extends BaseEvent {
 const startRegex = /「(.+?)」の攻略を開始した。/;
 const endRegex = /「(.+?)」の攻略を終了した。/;
 
+/**
+ * Loki の生エントリ配列を、用途別のイベントへパースする。
+ * @param entries Loki エントリ配列（時系列順を推奨）
+ */
 export const parseEvents = (entries: RawLokiEntry[]): ParsedEvent[] => {
   const events: ParsedEvent[] = [];
   for (const entry of entries) {
@@ -61,6 +76,9 @@ export const parseEvents = (entries: RawLokiEntry[]): ParsedEvent[] => {
   return events;
 };
 
+/**
+ * 1 エントリを適切なイベントへとパースする内部関数。
+ */
 const parseEntry = (entry: RawLokiEntry): ParsedEvent | ParsedEvent[] | null => {
   const { normalized, stream } = entry;
   const parts = normalized.split('|');
@@ -81,6 +99,9 @@ const parseEntry = (entry: RawLokiEntry): ParsedEvent | ParsedEvent[] | null => 
   }
 };
 
+/**
+ * システムメッセージ（00）を解釈してイベント化する。
+ */
 const parseSystemEvent = (entry: RawLokiEntry, parts: string[]): ParsedEvent | null => {
   if (parts.length < 5) {
     return null;
@@ -122,6 +143,9 @@ const parseSystemEvent = (entry: RawLokiEntry, parts: string[]): ParsedEvent | n
   return null;
 };
 
+/**
+ * 構造化アビリティログ（21/22）をイベントへ変換する。
+ */
 const parseStructuredAbility = (
   entry: RawLokiEntry,
   parts: string[],
@@ -171,6 +195,10 @@ const parseStructuredAbility = (
   } satisfies AbilityEvent;
 };
 
+/**
+ * 日本語ログメッセージから与ダメージを抽出する。
+ * @returns actor/target/amount/isCritical/isDirect を含むオブジェクト。解釈できない場合は null。
+ */
 export const parseDamageMessage = (
   message: string
 ): { actor: string | null; target: string | null; amount: number; isCritical: boolean; isDirect: boolean } | null => {
@@ -212,13 +240,20 @@ export const parseDamageMessage = (
   return null;
 };
 
+/**
+ * 対象文字列から不要な語を除去する。
+ */
 const cleanupTarget = (value: string): string =>
   value
     .replace(/は受け流した！/, '')
     .replace(/はブロックした！/, '')
     .trim();
 
+/** Type Guard: 攻略開始 */
 export const isStartEvent = (event: ParsedEvent): event is StartEvent => event.type === 'start';
+/** Type Guard: 攻略終了 */
 export const isEndEvent = (event: ParsedEvent): event is EndEvent => event.type === 'end';
+/** Type Guard: 与ダメージ */
 export const isDamageEvent = (event: ParsedEvent): event is DamageEvent => event.type === 'damage';
+/** Type Guard: アビリティ */
 export const isAbilityEvent = (event: ParsedEvent): event is AbilityEvent => event.type === 'ability';

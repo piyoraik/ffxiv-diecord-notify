@@ -42,6 +42,11 @@ export interface SummaryResult {
   availableDates: string[];
 }
 
+/**
+ * 指定日のログを集計し、UI 向けの要約構造に変換する。
+ * @param requestedDate YYYY-MM-DD の文字列（省略時は前日もしくは最新対象日）
+ * @returns 要約データと利用可能日付一覧
+ */
 export const summarizeLogsByDate = async (requestedDate?: string): Promise<SummaryResult> => {
   const combat = await fetchDailyCombat(requestedDate);
   if (combat.segments.length === 0) {
@@ -78,6 +83,11 @@ export const summarizeLogsByDate = async (requestedDate?: string): Promise<Summa
   };
 };
 
+/**
+ * 日次要約を Discord メッセージ文字列へ整形する。
+ * @param summary 日次要約
+ * @param availableDates 利用可能日付一覧
+ */
 export const formatSummaryMessage = (
   summary: DailySummary,
   availableDates: string[]
@@ -101,6 +111,11 @@ export const formatSummaryMessage = (
   return lines.join('\n');
 };
 
+/**
+ * 同日の攻略一覧を一覧表示用のメッセージに整形する。
+ * @param date 対象日 (YYYY-MM-DD)
+ * @param segments 攻略サマリ配列
+ */
 export const formatDpsListMessage = (
   date: string,
   segments: CombatSegmentSummary[]
@@ -120,6 +135,11 @@ export const formatDpsListMessage = (
   return lines.join('\n');
 };
 
+/**
+ * 指定攻略の DPS ランキング詳細をメッセージに整形する。
+ * @param segment 攻略サマリ
+ * @param date 対象日 (YYYY-MM-DD)
+ */
 export const formatDpsDetailMessage = (
   segment: CombatSegmentSummary,
   date: string
@@ -149,6 +169,10 @@ export const formatDpsDetailMessage = (
 
 export const fetchDailyCombatSummary = fetchDailyCombat;
 
+/**
+ * 要約中に検知した不整合（開始や終了の欠落）を収集する。
+ * @param entries 日次要約のエントリ配列
+ */
 const collectIssues = (entries: SummaryEntry[]): string[] => {
   const issues: string[] = [];
   entries.forEach(entry => {
@@ -162,6 +186,10 @@ const collectIssues = (entries: SummaryEntry[]): string[] => {
   return issues;
 };
 
+/**
+ * 要約 1 行分をレンダリングする。
+ * @param entry 要約エントリ
+ */
 const renderSummaryEntry = (entry: SummaryEntry): string => {
   const start = entry.start ? timeFormatter.format(entry.start) : '??:??';
   const end = entry.end ? timeFormatter.format(entry.end) : '??:??';
@@ -189,6 +217,10 @@ const renderSummaryEntry = (entry: SummaryEntry): string => {
   return line;
 };
 
+/**
+ * ミリ秒の継続時間を「H時間M分S秒」表記に整形する。
+ * @param durationMs 継続時間（ミリ秒）
+ */
 const formatDuration = (durationMs: number): string => {
   const totalSeconds = Math.max(Math.floor(durationMs / 1000), 0);
   const hours = Math.floor(totalSeconds / 3600);
@@ -205,4 +237,7 @@ const formatDuration = (durationMs: number): string => {
   return parts.join('');
 };
 
+/**
+ * JST タイムゾーンでの日付を YYYY-MM-DD で返す。
+ */
 export const formatDateJst = (date: Date): string => dateFormatter.format(date);

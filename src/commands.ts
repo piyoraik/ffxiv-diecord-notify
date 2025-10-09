@@ -1,6 +1,10 @@
 import { SlashCommandBuilder } from 'discord.js';
 
-// `/test` コマンド定義（任意の日付引数を受け取り日次サマリを返す）
+/**
+ * `/test` コマンド定義（任意の日付引数を受け取り日次サマリを返す）。
+ * - `date`: YYYY-MM-DD 形式の対象日（省略可）
+ * - `ephemeral`: エフェメラル返信の有無（既定 true）
+ */
 export const testCommand = new SlashCommandBuilder()
   .setName('test')
   .setDescription('ヒストリー形式で攻略ログの要約を返します。')
@@ -17,6 +21,13 @@ export const testCommand = new SlashCommandBuilder()
       .setRequired(false)
   );
 
+/**
+ * `/dps` コマンド定義（攻略別の DPS ランキングを表示）。
+ * - `date`: YYYY-MM-DD 形式の対象日（省略可）
+ * - `content`: コンテンツ名の部分一致フィルタ（省略可）
+ * - `index`: 同名コンテンツが複数ある場合に 1 始まりの番号で指定
+ * - `ephemeral`: エフェメラル返信の有無（既定 true）
+ */
 export const dpsCommand = new SlashCommandBuilder()
   .setName('dps')
   .setDescription('攻略ごとの DPS ランキングを表示します。')
@@ -45,4 +56,7 @@ export const dpsCommand = new SlashCommandBuilder()
       .setRequired(false)
   );
 
+/**
+ * 登録対象のコマンド一覧。
+ */
 export const commandList = [testCommand, dpsCommand];

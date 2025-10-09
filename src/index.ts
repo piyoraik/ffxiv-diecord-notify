@@ -32,6 +32,10 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
+/**
+ * `/test` コマンドの実装。指定日（省略時は最新対象日）の攻略履歴を要約して返信する。
+ * @param interaction Discord のチャット入力コマンド Interaction
+ */
 const handleTestCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
   const requestedDate = interaction.options.getString('date') ?? undefined;
   const ephemeral = interaction.options.getBoolean('ephemeral');
@@ -57,6 +61,10 @@ const handleTestCommand = async (interaction: ChatInputCommandInteraction): Prom
   }
 };
 
+/**
+ * `/dps` コマンドの実装。指定条件で攻略一覧を絞り、単一に定まれば詳細、複数なら一覧を表示する。
+ * @param interaction Discord のチャット入力コマンド Interaction
+ */
 const handleDpsCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
   const requestedDate = interaction.options.getString('date') ?? undefined;
   const contentFilter = interaction.options.getString('content') ?? undefined;

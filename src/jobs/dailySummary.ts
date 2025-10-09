@@ -2,6 +2,9 @@ import { Client, GatewayIntentBits, TextChannel } from 'discord.js';
 import { discordConfig, notificationConfig } from '../config.js';
 import { formatSummaryMessage, summarizeLogsByDate } from '../logParser.js';
 
+/**
+ * Discord にログインして、指定チャンネルへ前日サマリを投稿するジョブ本体。
+ */
 const run = async (): Promise<void> => {
   const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
   const token = discordConfig.token();
@@ -28,6 +31,9 @@ const run = async (): Promise<void> => {
   }
 };
 
+/**
+ * JST の観点で前日の日付 (YYYY-MM-DD) を返す。
+ */
 const getPreviousDateJst = (): string => {
   const now = new Date();
   const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);

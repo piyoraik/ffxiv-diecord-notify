@@ -8,7 +8,10 @@ const guildId = discordConfig.guildId();
 
 const rest = new REST({ version: '10' }).setToken(token);
 
-// ギルドスコープでスラッシュコマンドを登録するエントリポイント
+/**
+ * ギルドスコープでスラッシュコマンドを登録するエントリポイント。
+ * エラー発生時はプロセスの終了コードを 1 に設定する。
+ */
 const main = async (): Promise<void> => {
   try {
     console.log('Registering application commands...');

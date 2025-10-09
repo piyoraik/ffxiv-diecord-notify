@@ -47,8 +47,13 @@ const HOUR_IN_MS = 60 * 60 * 1000;
 const DAY_IN_MS = 24 * HOUR_IN_MS;
 const JST_OFFSET_MS = 9 * HOUR_IN_MS;
 const AGGREGATION_START_HOUR_JST = appSettings.aggregationStartHourJst();
+const AGGREGATION_END_HOUR_JST = appSettings.aggregationEndHourJst();
 const AGGREGATION_START_OFFSET_MS = AGGREGATION_START_HOUR_JST * HOUR_IN_MS;
 
+/**
+ * 指定日の攻略ログを取得・解析し、日次の戦闘サマリへ変換する。
+ * @param requestedDate YYYY-MM-DD 文字列（省略時は前日）
+ */
 export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCombatSummary> => {
   const { targetDate, startDate, endDate } = determineTimeWindow(requestedDate);
   const entries = await queryLogsInRange(startDate, endDate);
@@ -82,13 +87,18 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
   };
 };
 
+/**
+ * 集計対象の UTC 時刻範囲と日付表示用の文字列を決定する。
+ */
 const determineTimeWindow = (
   requestedDate?: string
 ): { targetDate: string; startDate: Date; endDate: Date } => {
   const targetDate = requestedDate ? sanitizeDate(requestedDate) : computePreviousDateInJst();
   const { year, month, day } = splitDate(targetDate);
-  const startUtcMs = Date.UTC(year, month - 1, day) - JST_OFFSET_MS + AGGREGATION_START_OFFSET_MS;
-  const endUtcMs = startUtcMs + DAY_IN_MS;
+  const dayBaseUtcMs = Date.UTC(year, month - 1, day) - JST_OFFSET_MS;
+  const startUtcMs = dayBaseUtcMs + AGGREGATION_START_OFFSET_MS;
+  const endBaseUtcMs = dayBaseUtcMs + AGGREGATION_END_HOUR_JST * HOUR_IN_MS;
+  const endUtcMs = endBaseUtcMs + (AGGREGATION_END_HOUR_JST <= AGGREGATION_START_HOUR_JST ? DAY_IN_MS : 0);
   return {
     targetDate,
     startDate: new Date(startUtcMs),
@@ -96,6 +106,9 @@ const determineTimeWindow = (
   };
 };
 
+/**
+ * YYYY-MM-DD 形式を軽くバリデーションする。
+ */
 const sanitizeDate = (input: string): string => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) {
     throw new Error('date は YYYY-MM-DD 形式で指定してください。');
@@ -103,6 +116,9 @@ const sanitizeDate = (input: string): string => {
   return input;
 };
 
+/**
+ * 現在時刻から JST 前日の日付を求める。
+ */
 const computePreviousDateInJst = (): string => {
   const now = new Date();
   const today = dateKeyFormatter.format(now);
@@ -112,11 +128,17 @@ const computePreviousDateInJst = (): string => {
   return dateKeyFormatter.format(previous);
 };
 
+/**
+ * YYYY-MM-DD を {year, month, day} に分解する。
+ */
 const splitDate = (value: string): { year: number; month: number; day: number } => {
   const [y, m, d] = value.split('-').map(Number);
   return { year: y, month: m, day: d };
 };
 
+/**
+ * アビリティ/ダメージイベントからプレイヤー名集合を抽出する。
+ */
 const collectPlayerNames = (
   abilityEvents: ParsedAbilityEvent[],
   damageEvents: ParsedDamageEvent[]
@@ -138,6 +160,9 @@ const collectPlayerNames = (
   return names;
 };
 
+/**
+ * 開始/終了イベントをペアリングし、攻略セグメントを構築する。
+ */
 const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
   const segments: SegmentWork[] = [];
   const openByContent = new Map<string, SegmentWork[]>();
@@ -211,6 +236,9 @@ const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
   return segments;
 };
 
+/**
+ * セグメントごとに与ダメージイベントを集計してプレイヤー別 DPS を算出する。
+ */
 const attachDamageToSegments = (
   segments: SegmentWork[],
   damageEvents: ParsedDamageEvent[],
@@ -270,6 +298,9 @@ const attachDamageToSegments = (
   });
 };
 
+/**
+ * コンテンツ名ごとに出現順序（連番）を割り当てる。
+ */
 const assignOrdinals = (segments: SegmentWork[]): void => {
   const counters = new Map<string, number>();
   segments.forEach(segment => {
@@ -279,4 +310,7 @@ const assignOrdinals = (segments: SegmentWork[]): void => {
   });
 };
 
+/**
+ * FFXIV のプレイヤー ID（10 から始まる）かを判定する簡易チェック。
+ */
 const isPlayerId = (id?: string): boolean => typeof id === 'string' && id.startsWith('10');
