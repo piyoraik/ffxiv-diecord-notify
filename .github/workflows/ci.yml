@@ -16,6 +16,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          corepack enable || true
+          yarn install --frozen-lockfile
+
+      - name: Type check (build)
+        run: yarn build
+
+      - name: Run unit tests
+        run: yarn test
+
       - name: Derive image metadata
         id: meta
         run: |
