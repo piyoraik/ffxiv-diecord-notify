@@ -1,5 +1,5 @@
-// 実ログ（logs.json）を用いたパーサの簡易回帰テスト。
-// - 形式: ルートにある logs.json は [{line, timestamp, fields}, ...] の配列
+// 実ログ（logs/logs.json）を用いたパーサの簡易回帰テスト。
+// - 形式: logs/logs.json は [{line, timestamp, fields}, ...] の配列
 // - 目的: normalize 相当の処理で行文字列を整形し、parseEvents / parseDamageMessage が
 //   実ログでも破綻しないことを確認する。パターン数の増加に合わせて段階的に強化可能。
 import { test } from 'node:test';
@@ -33,10 +33,15 @@ const toEntry = (r: RawFileEntry): RawLokiEntry => ({
   stream: r.fields ?? {}
 });
 
-test('real logs: parseEvents and parseDamageMessage handle common patterns', async () => {
-  const p = path.resolve(process.cwd(), 'logs.json');
-  assert.ok(fs.existsSync(p), 'logs.json not found');
-  const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as RawFileEntry[];
+// CI 等で `logs/logs.json` が存在しない環境では自動的に skip します。
+const defaultPath = path.resolve(process.cwd(), 'logs/logs.json');
+const logPath = process.env.LOGS_JSON_PATH
+  ? path.resolve(process.cwd(), process.env.LOGS_JSON_PATH)
+  : defaultPath;
+const hasRealLogs = fs.existsSync(logPath);
+
+test('real logs: parseEvents and parseDamageMessage handle common patterns', { skip: !hasRealLogs }, async () => {
+  const raw = JSON.parse(fs.readFileSync(logPath, 'utf-8')) as RawFileEntry[];
   assert.ok(Array.isArray(raw));
   assert.ok(raw.length > 0);
 
@@ -63,4 +68,3 @@ test('real logs: parseEvents and parseDamageMessage handle common patterns', asy
     }
   }
 });
-

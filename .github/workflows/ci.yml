@@ -30,6 +30,9 @@ jobs:
         run: yarn build
 
       - name: Run unit tests
+        env:
+          # 実ログ回帰テストは logs.json が無い環境では skip させる
+          LOGS_JSON_PATH: __ci_no_logs__
         run: yarn test
 
       - name: Derive image metadata

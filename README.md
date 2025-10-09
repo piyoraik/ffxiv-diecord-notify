@@ -217,10 +217,11 @@ kubectl apply -f k8s/manifests/cronjob.yaml
   - 集計: セグメント組み立て・連番付与・DPS 集計
   - 表示: 日次要約・DPS 一覧/詳細の整形
   - Discord: `/test` `/dps` ハンドラ、日次ジョブ（依存注入＋スタブ）
-  - 実ログ回帰: ルートの `logs.json` を読み込み、`parseEvents`/`parseDamageMessage` が破綻しないことを確認
+- 実ログ回帰: `logs/logs.json` を読み込み、`parseEvents`/`parseDamageMessage` が破綻しないことを確認
+  - 備考: `logs/logs.json` が存在しない環境（CI など）では自動的に skip します。任意のパスを使用したい場合は `LOGS_JSON_PATH` を設定してください。
 
 - フィクスチャ方針
-  - 実ログは `logs.json` に一時保管（配列形式）。必要に応じて `tests/fixtures` に NDJSON/小型 JSON を追加していくのが推奨
+- 実ログは `logs/logs.json` に一時保管（配列形式）。必要に応じて `tests/fixtures` に NDJSON/小型 JSON を追加していくのが推奨
   - NDJSON: 1 行 1 JSON（`{timestamp_ns,line,stream}`）。追記や差分が扱いやすい
   - 期待結果のゴールデン JSON: セグメント/サマリの回帰確認に有効
 
