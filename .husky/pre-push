@@ -1,7 +1,12 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+#!/usr/bin/env bash
 
 set -euo pipefail
+
+# Skip hook on CI to avoid interfering with release actions
+if [[ -n "${CI:-}" ]] || [[ -n "${HUSKY:-}" && "${HUSKY}" = "0" ]]; then
+  echo "[husky] CI or HUSKY=0 detected; skipping pre-push"
+  exit 0
+fi
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
