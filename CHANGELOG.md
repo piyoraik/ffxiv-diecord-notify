@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.21](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.20...v0.1.21) (2025-10-09)
+
+
+### Bug Fixes
+
+* test ([e07bbe7](https://github.com/piyoraik/ffxiv-diecord-notify/commit/e07bbe7afeb6455623ad90bd47ef803a4a9809fc))
+
 ### [0.1.20](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.19...v0.1.20) (2025-10-09)
 
 
