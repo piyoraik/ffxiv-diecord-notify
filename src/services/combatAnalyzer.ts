@@ -12,7 +12,7 @@ import {
   type AbilityEvent as ParsedAbilityEvent,
   type AddCombatantEvent,
   type RemoveCombatantEvent,
-  type ParsedEvent
+  type ExtendedParsedEvent
 } from '../parsers/events.js';
 import { DailyCombatSummary, CombatSegmentSummary, PlayerStats, ActivityStatus } from '../types/combat.js';
 
@@ -221,7 +221,7 @@ const assignParticipants = (
 /**
  * 開始/終了イベントをペアリングし、攻略セグメントを構築する。
  */
-const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
+const buildSegments = (events: ExtendedParsedEvent[]): SegmentWork[] => {
   const segments: SegmentWork[] = [];
   const openByContent = new Map<string, SegmentWork[]>();
 

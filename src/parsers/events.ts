@@ -324,13 +324,13 @@ const cleanupTarget = (value: string): string =>
     .trim();
 
 /** Type Guard: 攻略開始 */
-export const isStartEvent = (event: ParsedEvent): event is StartEvent => event.type === 'start';
+export const isStartEvent = (event: ExtendedParsedEvent): event is StartEvent => (event as any).type === 'start';
 /** Type Guard: 攻略終了 */
-export const isEndEvent = (event: ParsedEvent): event is EndEvent => event.type === 'end';
+export const isEndEvent = (event: ExtendedParsedEvent): event is EndEvent => (event as any).type === 'end';
 /** Type Guard: 与ダメージ */
-export const isDamageEvent = (event: ParsedEvent): event is DamageEvent => event.type === 'damage';
+export const isDamageEvent = (event: ExtendedParsedEvent): event is DamageEvent => (event as any).type === 'damage';
 /** Type Guard: アビリティ */
-export const isAbilityEvent = (event: ParsedEvent): event is AbilityEvent => event.type === 'ability';
+export const isAbilityEvent = (event: ExtendedParsedEvent): event is AbilityEvent => (event as any).type === 'ability';
 
 /** Type Guard: AddCombatant */
 export const isAddCombatantEvent = (event: ExtendedParsedEvent): event is AddCombatantEvent =>
