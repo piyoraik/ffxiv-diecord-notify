@@ -1,5 +1,10 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
-import pkg from '../../package.json' assert { type: 'json' };
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+// JSON import の互換性（Node の import attributes 差異）を避けるため createRequire を使用
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require('../../package.json');
+import { appSettings } from '../config.js';
 import {
   summarizeLogsByDate,
   formatSummaryMessage,
@@ -128,5 +133,29 @@ export const handleDpsCommand = async (interaction: ChatInputCommandInteraction)
 export const handleVersionCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
   const version = (pkg as any)?.version ?? 'unknown';
   const builtAt = process.env.BUILD_TIMESTAMP ?? new Date().toISOString();
-  await interaction.reply({ content: `version: v${version} (built: ${builtAt})`, ephemeral: true });
+  const tz = appSettings.timeZone() || 'Asia/Tokyo';
+  let builtLocal = builtAt;
+  try {
+    const d = new Date(builtAt);
+    if (!Number.isNaN(d.getTime())) {
+      const datePart = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(d);
+      const timePart = new Intl.DateTimeFormat('ja-JP', {
+        timeZone: tz,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).format(d);
+      const tzLabel = tz === 'Asia/Tokyo' ? 'JST' : tz;
+      builtLocal = `${datePart} ${timePart} ${tzLabel}`;
+    }
+  } catch {
+    // keep original builtAt string
+  }
+  await interaction.reply({ content: `version: v${version} (built: ${builtLocal})`, ephemeral: true });
 };

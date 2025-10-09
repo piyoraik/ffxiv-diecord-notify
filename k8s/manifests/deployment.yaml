@@ -6,7 +6,7 @@ metadata:
   labels:
     app: discord-ff14-bot
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: discord-ff14-bot
@@ -19,7 +19,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: bot
-          image: ghcr.io/piyoraik/ffxiv-diecord-notify:latest
+          image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.19
           imagePullPolicy: Always
           envFrom:
             - secretRef:
