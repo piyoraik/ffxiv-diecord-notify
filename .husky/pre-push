@@ -5,10 +5,20 @@ set -euo pipefail
 
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
+# 1) ローカルテスト（build + test）
+echo "[husky] running local build and tests..."
+if [ -z "${LOGS_JSON_PATH:-}" ] && [ -f "logs/logs.json" ]; then
+  echo "[husky] LOGS_JSON_PATH is unset; using local logs/logs.json if referenced by tests"
+fi
+yarn build
+yarn test
+
+# 2) upstream 未設定なら追跡ブランチを作成
 if ! git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
   echo "[husky] upstream not set for ${CURRENT_BRANCH}. creating tracking branch..."
   git push --set-upstream origin "${CURRENT_BRANCH}" --no-verify
 fi
 
+# 3) リリース + タグ push（既存フローを維持）
 yarn release
 git push --follow-tags --no-verify
