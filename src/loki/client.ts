@@ -153,7 +153,6 @@ const collectEntriesFromStreams = (
   for (const stream of streams) {
     const streamLabels = stream.stream ?? {};
     const values = stream.values ?? [];
-    const streamKeyPrefix = JSON.stringify(streamLabels);
 
     for (const [timestampNs, rawLine] of values) {
       const nsBig = BigInt(timestampNs);
@@ -162,7 +161,8 @@ const collectEntriesFromStreams = (
       }
 
       const normalized = normalizeLine(rawLine);
-      const key = `${streamKeyPrefix}|${timestampNs}|${normalized}`;
+      // 重複排除はストリームラベルに依存せず、同一タイムスタンプ＋同一行でまとめる
+      const key = `${timestampNs}|${normalized}`;
       if (seen.has(key)) {
         continue;
       }

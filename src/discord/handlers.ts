@@ -13,6 +13,7 @@ import {
   fetchDailyCombatSummary
 } from '../logParser.js';
 import { replaceJobTagsWithEmojis } from '../emoji.js';
+import { chunkMessage } from '../utils/text.js';
 import { upsertRoster, deleteRoster, listRoster } from '../db/roster.js';
 
 /**
@@ -39,10 +40,19 @@ export const handleTestCommandWith = async (
       await interaction.editReply('Loki から対象日のログが見つかりませんでした。設定を確認してください。');
       return;
     }
-    let message = deps.format(summary, availableDates, { rosterNames, guild: interaction.guild as any });
+    // /test では DPS 上位などは出さず、純粋なタイムラインのみ出力
+    let message = deps.format(summary, availableDates, { rosterNames, guild: interaction.guild as any, showTop: false });
     // 可能ならギルド絵文字へ置換
     message = replaceJobTagsWithEmojis(message, interaction.guild ?? null);
-    await interaction.editReply({ content: message });
+    const chunks = chunkMessage(message);
+    if (chunks.length === 1) {
+      await interaction.editReply({ content: chunks[0] });
+    } else {
+      await interaction.editReply({ content: chunks[0] });
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp({ content: chunks[i], ephemeral: shouldUseEphemeral });
+      }
+    }
   } catch (error) {
     const description = error instanceof Error ? error.message : 'unknown error';
     if (interaction.deferred || interaction.replied) {
@@ -106,12 +116,28 @@ export const handleDpsCommandWith = async (
       selectedSegment = segments[0];
     } else {
       const listMessage = deps.formatList(daily.date, segments, { guild: interaction.guild as any });
-      await interaction.editReply(listMessage);
+      const chunks = chunkMessage(listMessage);
+      if (chunks.length === 1) {
+        await interaction.editReply(chunks[0]);
+      } else {
+        await interaction.editReply(chunks[0]);
+        for (let i = 1; i < chunks.length; i++) {
+          await interaction.followUp({ content: chunks[i], ephemeral: shouldUseEphemeral });
+        }
+      }
       return;
     }
 
     const detail = deps.formatDetail(selectedSegment, daily.date, { guild: interaction.guild as any });
-    await interaction.editReply(detail);
+    const chunks = chunkMessage(detail);
+    if (chunks.length === 1) {
+      await interaction.editReply(chunks[0]);
+    } else {
+      await interaction.editReply(chunks[0]);
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp({ content: chunks[i], ephemeral: shouldUseEphemeral });
+      }
+    }
   } catch (error) {
     const description = error instanceof Error ? error.message : 'unknown error';
     if (interaction.deferred || interaction.replied) {
@@ -197,7 +223,11 @@ export const handleRosterCommand = async (interaction: ChatInputCommandInteracti
         return;
       }
       const lines = rows.map(r => `${r.emoji ? r.emoji + ' ' : ''}${r.jobCode ? `[${r.jobCode}] ` : ''}${r.name}`);
-      await interaction.reply({ content: lines.join('\n'), ephemeral: true });
+      const chunks = chunkMessage(lines.join('\n'));
+      await interaction.reply({ content: chunks[0], ephemeral: true });
+      for (let i = 1; i < chunks.length; i++) {
+        await interaction.followUp({ content: chunks[i], ephemeral: true });
+      }
       return;
     }
   } catch (e) {

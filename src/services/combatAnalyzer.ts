@@ -56,6 +56,8 @@ const JST_OFFSET_MS = 9 * HOUR_IN_MS;
 const AGGREGATION_START_HOUR_JST = appSettings.aggregationStartHourJst();
 const AGGREGATION_END_HOUR_JST = appSettings.aggregationEndHourJst();
 const AGGREGATION_START_OFFSET_MS = AGGREGATION_START_HOUR_JST * HOUR_IN_MS;
+// 00 の開始が短時間に重複出力されるケースを抑制するためのデバウンス（ns）
+const START_DEBOUNCE_NS = 120n * 1_000_000_000n; // 120 秒
 
 /**
  * 指定日の攻略ログを取得・解析し、日次の戦闘サマリへ変換する。
@@ -261,6 +263,16 @@ const buildSegments = (events: ExtendedParsedEvent[]): SegmentWork[] => {
   for (const event of events) {
     if (isStartEvent(event)) {
       const content = event.content;
+      // 直近の未終了開始と近接（<= START_DEBOUNCE_NS）する開始は重複と見なして無視
+      {
+        const q = openByContent.get(content);
+        if (q && q.length > 0) {
+          const last = q[q.length - 1];
+          if (last.startNs && event.timestampNs - last.startNs <= START_DEBOUNCE_NS) {
+            continue;
+          }
+        }
+      }
       const segment: SegmentWork = {
         id: `${event.timestampNs}-${content}`,
         content,
@@ -286,7 +298,8 @@ const buildSegments = (events: ExtendedParsedEvent[]): SegmentWork[] => {
       const content = event.content;
       const queue = openByContent.get(content);
       if (queue && queue.length > 0) {
-        const segment = queue.shift()!;
+        // もっとも近い未終了の開始とペアリング（LIFO）
+        const segment = queue.pop()!;
         segment.endNs = event.timestampNs;
         segment.end = event.timestamp;
         segment.status = segment.startNs ? 'completed' : 'missing_start';

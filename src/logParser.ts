@@ -95,7 +95,7 @@ export const summarizeLogsByDate = async (requestedDate?: string): Promise<Summa
 export const formatSummaryMessage = (
   summary: DailySummary,
   availableDates: string[],
-  opts?: { rosterNames?: Set<string>; guild?: { id: string; emojis: { cache: Map<any, any> } } }
+  opts?: { rosterNames?: Set<string>; guild?: { id: string; emojis: { cache: Map<any, any> } }; showTop?: boolean }
 ): string => {
   const lines: string[] = [];
   lines.push(`📅 ${summary.date} の攻略履歴`);
@@ -103,7 +103,7 @@ export const formatSummaryMessage = (
     lines.push('記録が見つかりませんでした。');
   } else {
     summary.entries.forEach(entry => {
-      lines.push(renderSummaryEntry(entry));
+      lines.push(renderSummaryEntry(entry, opts?.showTop !== false));
       // 登録プレイヤーの参加があれば併記
       if (opts?.rosterNames && entry.players.length > 0) {
         const matched = entry.players.filter(p => opts.rosterNames!.has(p.name));
@@ -209,7 +209,7 @@ const collectIssues = (entries: SummaryEntry[]): string[] => {
  * 要約 1 行分をレンダリングする。
  * @param entry 要約エントリ
  */
-const renderSummaryEntry = (entry: SummaryEntry): string => {
+const renderSummaryEntry = (entry: SummaryEntry, showTop = true): string => {
   const start = entry.start ? timeFormatter.format(entry.start) : '??:??';
   const end = entry.end ? timeFormatter.format(entry.end) : '??:??';
   const duration = entry.durationMs !== null ? formatDuration(entry.durationMs) : '所要時間不明';
@@ -227,7 +227,7 @@ const renderSummaryEntry = (entry: SummaryEntry): string => {
   }
 
   const topPlayers = entry.players.slice(0, 3);
-  if (topPlayers.length > 0) {
+  if (showTop && topPlayers.length > 0) {
     const extras = topPlayers
       .map((player, idx) => `    ${idx + 1}. ${renderPlayerLabel(player)} ${Math.round(player.dps)} DPS (総 ${player.totalDamage})`)
       .join('\n');

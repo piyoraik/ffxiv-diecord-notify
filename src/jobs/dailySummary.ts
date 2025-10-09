@@ -3,6 +3,7 @@ import { discordConfig, notificationConfig } from '../config.js';
 import { formatSummaryMessage, summarizeLogsByDate } from '../logParser.js';
 import { listRoster } from '../db/roster.js';
 import { replaceJobTagsWithEmojis } from '../emoji.js';
+import { chunkMessage } from '../utils/text.js';
 
 /**
  * 依存関係を受け取り、日次サマリ投稿を実行する（テスト/実行兼用）。
@@ -33,7 +34,12 @@ export const runDailySummaryWithClient = async (
     const rosterNames = new Set(roster.map(r => r.name));
     let message = format(summary, availableDates, { rosterNames, guild: guild as any });
     message = replaceJobTagsWithEmojis(message, guild);
-    await (channel as unknown as TextChannel).send(message);
+    const chunks = chunkMessage(message);
+    // 1/N 送信（ジョブは通常メッセージ）
+    await (channel as unknown as TextChannel).send(chunks[0]);
+    for (let i = 1; i < chunks.length; i++) {
+      await (channel as unknown as TextChannel).send(chunks[i]);
+    }
   } finally {
     await client.destroy();
   }
