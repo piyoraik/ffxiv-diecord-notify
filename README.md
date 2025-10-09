@@ -10,6 +10,9 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 - `/test` スラッシュコマンド
   - 任意日付（未指定時は前日 JST）の「攻略開始」「攻略終了」ログを突き合わせ、所要時間付きで返信
   - `ephemeral` オプションにより、エフェメラル／通常返信を切り替え可能
+- `/dps` スラッシュコマンド
+  - 同日内の各攻略に対してプレイヤーごとの DPS ランキングを表示
+  - `content`（部分一致）や `index`（複数合致時の番号指定）で絞り込み
 - 日次バッチ
   - CronJob により毎日 10:00 JST に前日の攻略履歴を指定チャンネルへ自動投稿
 - Loki 連携
@@ -31,6 +34,9 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 | `LOKI_QUERY_FILTER` | 追加の Loki パイプ記述 | 例: `|~ "攻略を(開始|終了)した。"`。未指定なら全ログを取得 |
 | `LOKI_QUERY_LIMIT` | 取得上限件数 | 既定値 5000 |
 | `LOKI_DEBUG` | デバッグ出力フラグ | `true`/`false` |
+| `APP_TIME_ZONE` | 表示・整形に使用するタイムゾーン | 既定値 `Asia/Tokyo` |
+| `AGGREGATION_START_HOUR_JST` | 集計開始時刻（JST 時） | 既定値 `10` |
+| `AGGREGATION_END_HOUR_JST` | 集計終了時刻（JST 時） | 既定値 `10`（=開始から24h） |
 
 `.env.example` を `.env` にコピーし、上記を設定してください（`.env` は `.gitignore` 済み）。
 
@@ -107,6 +113,22 @@ yarn start
 - 初回に過去ログを再送したい場合は Fluentd 停止 → pos ファイル・バッファ削除 → 再起動
 - `LOKI_QUERY_FILTER` を設定すると Loki クエリに追記されます（既定では無指定）。
 
+### Loki の手動クエリ（curl 例）
+
+ローカルからポートフォワードして確認できます。
+
+```bash
+kubectl -n monitoring port-forward svc/loki 3100:3100
+
+# 例: 2024-10-08 の JST 10:00 → 翌日 08:00 (UTC 01:00 → 23:00)
+curl -sG 'http://localhost:3100/loki/api/v1/query_range' \
+  --data-urlencode 'query={content="ffxiv",job="ffxiv-dungeon",instance="DESKTOP-LHEGLIC"}' \
+  --data-urlencode 'start=2024-10-08T01:00:00Z' \
+  --data-urlencode 'end=2024-10-08T23:00:00Z' \
+  --data-urlencode 'direction=FORWARD' \
+  --data-urlencode 'limit=5000' | jq .
+```
+
 ---
 
 ## GitHub Actions
@@ -165,18 +187,53 @@ kubectl apply -f k8s/manifests/cronjob.yaml
 
 ---
 
-## ジョブ／ヘルパー
+## ジョブ／ヘルパー / 構成
 
-- `src/jobs/dailySummary.ts` : Loki から前日分のログを取得し、`DISCORD_CHANNEL_ID` で指定したチャンネルへサマリを送信。CronJob・ローカル実行 (`yarn daily:summary`) 双方で利用。
-- `src/logParser.ts` : 開始／終了ログを突き合わせてサマリを生成するコアロジック。
-- `src/index.ts` : `/test` コマンドをハンドルし、必要に応じてエフェメラル返信を行う。
+- `src/jobs/dailySummary.ts` : 前日分のログを取得しサマリを送信（直接実行時のみ起動）。テスト向けに依存注入関数 `runDailySummaryWithClient()` を公開。
+- `src/logParser.ts` : 開始／終了ログの突き合わせと日次サマリの整形。
+- `src/discord/handlers.ts` : `/test` `/dps` の実装（依存注入版を用意）。`src/index.ts` から利用。
+- `src/index.ts` : Discord クライアントの起動とイベント購読。
+- `src/loki/client.ts` : Loki `query_range` 取得。ページング／重複排除／昇順ソート対応。
+- `src/parsers/events.ts` : cactbot LogGuide 準拠のパーサ（00/21/22 に加え 03/04 をサポート）。
+- `src/registerCommands.ts` : コマンド登録ロジック（`registerCommands`/`registerCommandsWith`）。
+- `src/registerCommands.main.ts` : コマンド登録エントリポイント（`yarn deploy:commands` で実行）。
+
+### 集計期間（JST）の定義
+- `AGGREGATION_START_HOUR_JST` と `AGGREGATION_END_HOUR_JST` により、「JST X:00 〜 （必要なら翌日へ）JST Y:00」を定義。
+- 例: `10` と `8` → 「JST 10:00 〜 翌日 08:00」。
+- 例: `10` と `10` → 「JST 10:00 〜 翌日 10:00」。
+
+---
+
+## テスト
+
+- 実行
+  - Node.js 20.6+ / 22+（本プロジェクトは 22+ を推奨）
+  - `yarn test`（内部で `node --test --import tsx "tests/**/*.test.ts"` を実行）
+
+- カバレッジ（主なテスト）
+  - パーサ: 日本語ダメージ文、00 Start/End、21/22 Ability/AOE、03/04 Add/RemoveCombatant
+  - Loki クライアント: ページング・重複排除・昇順ソート・フィルタ結合（`|~`/生 `|`）
+  - 集計: セグメント組み立て・連番付与・DPS 集計
+  - 表示: 日次要約・DPS 一覧/詳細の整形
+  - Discord: `/test` `/dps` ハンドラ、日次ジョブ（依存注入＋スタブ）
+  - 実ログ回帰: ルートの `logs.json` を読み込み、`parseEvents`/`parseDamageMessage` が破綻しないことを確認
+
+- フィクスチャ方針
+  - 実ログは `logs.json` に一時保管（配列形式）。必要に応じて `tests/fixtures` に NDJSON/小型 JSON を追加していくのが推奨
+  - NDJSON: 1 行 1 JSON（`{timestamp_ns,line,stream}`）。追記や差分が扱いやすい
+  - 期待結果のゴールデン JSON: セグメント/サマリの回帰確認に有効
+
+- モックの使い分け
+  - Loki: `global.fetch` を `node:test` の `mock.method` で差し替え
+  - Discord: REST/Client をスタブ、または依存注入関数に差し替え
 
 ---
 
 ## 制限事項と今後の改善
 
 - 2000 文字を超えるサマリは分割していません。必要に応じて複数メッセージ送信を実装してください。
-- テストコードは未整備です。ロジックの安定化に合わせてユニットテストを追加してください。
+- 21/22 の詳細フィールド（クリ/直/DoT 等）の網羅は段階的に拡充予定。必要に応じて cactbot のフィールド割り当てに合わせて厳密化します。
 - Fluentd の冪等制御や再送設計は PoC レベルです。商用利用では重複検知や監視を追加してください。
 - Loki のクエリは単一 PC 前提です。複数環境のログを扱う場合は ConfigMap でラベル条件を調整する必要があります。
 

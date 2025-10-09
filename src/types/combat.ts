@@ -31,6 +31,7 @@ export interface CombatSegmentSummary {
   status: ActivityStatus;
   durationMs: number | null;
   players: PlayerStats[];
+  participants?: string[];
 }
 
 /**

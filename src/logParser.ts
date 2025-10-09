@@ -29,6 +29,7 @@ export interface SummaryEntry {
   players: PlayerStats[];
   ordinal: number;
   globalIndex: number;
+  participants?: string[];
 }
 
 export interface DailySummary {
@@ -68,7 +69,8 @@ export const summarizeLogsByDate = async (requestedDate?: string): Promise<Summa
     status: segment.status,
     players: segment.players,
     ordinal: segment.ordinal,
-    globalIndex: segment.globalIndex
+    globalIndex: segment.globalIndex,
+    participants: segment.participants
   }));
 
   const issues = collectIssues(entries);

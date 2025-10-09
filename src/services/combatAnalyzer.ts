@@ -6,8 +6,12 @@ import {
   isEndEvent,
   isDamageEvent,
   isAbilityEvent,
+  isAddCombatantEvent,
+  isRemoveCombatantEvent,
   type DamageEvent as ParsedDamageEvent,
   type AbilityEvent as ParsedAbilityEvent,
+  type AddCombatantEvent,
+  type RemoveCombatantEvent,
   type ParsedEvent
 } from '../parsers/events.js';
 import { DailyCombatSummary, CombatSegmentSummary, PlayerStats, ActivityStatus } from '../types/combat.js';
@@ -33,6 +37,7 @@ interface SegmentWork {
   durationMs: number | null;
   ordinal: number;
   globalIndex: number;
+  participants: string[];
 }
 
 type MutablePlayerStats = {
@@ -62,9 +67,12 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
   const parsedEvents = parseEvents(entries);
   const damageEvents = parsedEvents.filter(isDamageEvent) as ParsedDamageEvent[];
   const abilityEvents = parsedEvents.filter(isAbilityEvent) as ParsedAbilityEvent[];
-  const playerNames = collectPlayerNames(abilityEvents, damageEvents);
+  const addEvents = parsedEvents.filter(isAddCombatantEvent) as AddCombatantEvent[];
+  const removeEvents = parsedEvents.filter(isRemoveCombatantEvent) as RemoveCombatantEvent[];
+  const playerNames = collectPlayerNames(abilityEvents, damageEvents, addEvents);
   const segments = buildSegments(parsedEvents);
 
+  assignParticipants(segments, addEvents, removeEvents);
   attachDamageToSegments(segments, damageEvents, playerNames);
   assignOrdinals(segments);
 
@@ -77,7 +85,8 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
     end: seg.end,
     status: seg.status,
     durationMs: seg.durationMs,
-    players: seg.players
+    players: seg.players,
+    participants: seg.participants
   }));
 
   return {
@@ -141,7 +150,8 @@ const splitDate = (value: string): { year: number; month: number; day: number } 
  */
 const collectPlayerNames = (
   abilityEvents: ParsedAbilityEvent[],
-  damageEvents: ParsedDamageEvent[]
+  damageEvents: ParsedDamageEvent[],
+  addEvents: AddCombatantEvent[] = []
 ): Set<string> => {
   const names = new Set<string>();
   abilityEvents.forEach(event => {
@@ -157,7 +167,55 @@ const collectPlayerNames = (
       names.add(event.actor);
     }
   });
+  addEvents.forEach(event => {
+    if (isPlayerId(event.combatantId) && event.combatantName) {
+      names.add(event.combatantName);
+    }
+  });
   return names;
+};
+
+/**
+ * 03/04 の入退場情報から、各セグメントの参加推定を行う。
+ * - セグメント終了時点までに Add されているプレイヤーを候補に含める
+ * - セグメント開始前に Remove されているプレイヤーは除外
+ * - ID→名前の解決は直近の Add 名を優先
+ */
+const assignParticipants = (
+  segments: SegmentWork[],
+  addEvents: AddCombatantEvent[],
+  removeEvents: RemoveCombatantEvent[]
+): void => {
+  const idToName = new Map<string, string>();
+  addEvents.forEach(a => {
+    if (a.combatantId && a.combatantName) {
+      idToName.set(a.combatantId, a.combatantName);
+    }
+  });
+
+  segments.forEach(seg => {
+    const set = new Set<string>();
+    const segEnd = seg.endNs ?? seg.startNs ?? null;
+    const segStart = seg.startNs ?? seg.endNs ?? null;
+    if (!segEnd || !segStart) {
+      seg.participants = [];
+      return;
+    }
+
+    for (const a of addEvents) {
+      if (a.timestampNs <= segEnd) {
+        const name = idToName.get(a.combatantId) ?? a.combatantName;
+        if (name) set.add(name);
+      }
+    }
+    for (const r of removeEvents) {
+      if (r.timestampNs < segStart) {
+        const name = idToName.get(r.combatantId) ?? r.combatantName;
+        if (name) set.delete(name);
+      }
+    }
+    seg.participants = Array.from(set);
+  });
 };
 
 /**
@@ -181,7 +239,8 @@ const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
         players: [],
         durationMs: null,
         ordinal: 0,
-        globalIndex: 0
+        globalIndex: 0,
+        participants: []
       };
       const queue = openByContent.get(content) ?? [];
       queue.push(segment);
@@ -210,7 +269,8 @@ const buildSegments = (events: ParsedEvent[]): SegmentWork[] => {
           players: [],
           durationMs: null,
           ordinal: 0,
-          globalIndex: 0
+          globalIndex: 0,
+          participants: []
         });
       }
     }
@@ -314,3 +374,16 @@ const assignOrdinals = (segments: SegmentWork[]): void => {
  * FFXIV のプレイヤー ID（10 から始まる）かを判定する簡易チェック。
  */
 const isPlayerId = (id?: string): boolean => typeof id === 'string' && id.startsWith('10');
+
+/**
+ * テスト用に一部の純粋関数を公開する（外部 API としては非推奨）。
+ */
+export const __testables = {
+  determineTimeWindow,
+  // 以下はユニットテスト専用の限定公開
+  buildSegments,
+  assignOrdinals,
+  attachDamageToSegments,
+  collectPlayerNames,
+  assignParticipants
+};

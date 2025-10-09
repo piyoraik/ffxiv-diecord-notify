@@ -3,32 +3,42 @@ import { discordConfig, notificationConfig } from '../config.js';
 import { formatSummaryMessage, summarizeLogsByDate } from '../logParser.js';
 
 /**
- * Discord にログインして、指定チャンネルへ前日サマリを投稿するジョブ本体。
+ * 依存関係を受け取り、日次サマリ投稿を実行する（テスト/実行兼用）。
  */
-const run = async (): Promise<void> => {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
-  const token = discordConfig.token();
-  const channelId = notificationConfig.channelId();
-
+export const runDailySummaryWithClient = async (
+  client: Client,
+  token: string,
+  channelId: string,
+  summarize = summarizeLogsByDate,
+  format = formatSummaryMessage
+): Promise<void> => {
   try {
     await client.login(token);
     const channel = await client.channels.fetch(channelId);
-    if (!channel || channel.type !== 0) {
+    if (!channel || (channel as any).type !== 0) {
       throw new Error(`Channel ${channelId} not found or not a text channel.`);
     }
 
     const targetDate = getPreviousDateJst();
-    const { summary, availableDates } = await summarizeLogsByDate(targetDate);
+    const { summary, availableDates } = await summarize(targetDate);
     if (!summary || summary.entries.length === 0) {
-      await (channel as TextChannel).send(`📅 ${targetDate} の攻略記録は見つかりませんでした。`);
+      await (channel as unknown as TextChannel).send(`📅 ${targetDate} の攻略記録は見つかりませんでした。`);
       return;
     }
 
-    const message = formatSummaryMessage(summary, availableDates);
-    await (channel as TextChannel).send(message);
+    const message = format(summary, availableDates);
+    await (channel as unknown as TextChannel).send(message);
   } finally {
     await client.destroy();
   }
+};
+
+/** 実行時のエントリポイント（既存動作と互換） */
+const run = async (): Promise<void> => {
+  const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
+  const token = discordConfig.token();
+  const channelId = notificationConfig.channelId();
+  await runDailySummaryWithClient(client, token, channelId);
 };
 
 /**
@@ -45,7 +55,19 @@ const getPreviousDateJst = (): string => {
   return `${year}-${month}-${day}`;
 };
 
-void run().catch(error => {
-  console.error('Failed to send daily summary', error);
-  process.exit(1);
-});
+import { fileURLToPath } from 'node:url';
+
+// 直接実行時のみ起動（テストや import 時は起動しない）
+if (typeof process !== 'undefined') {
+  try {
+    const isMain = typeof process.argv?.[1] === 'string' && fileURLToPath(import.meta.url) === process.argv[1];
+    if (isMain) {
+      void run().catch(error => {
+        console.error('Failed to send daily summary', error);
+        process.exit(1);
+      });
+    }
+  } catch {
+    // noop
+  }
+}

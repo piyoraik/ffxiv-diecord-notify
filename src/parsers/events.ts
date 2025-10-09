@@ -5,6 +5,26 @@ import type { RawLokiEntry } from '../loki/client.js';
  */
 export type ParsedEvent = StartEvent | EndEvent | DamageEvent | AbilityEvent | UnknownEvent;
 
+/** AddCombatant（type=03）イベント。cactbot LogGuide に準拠。 */
+export interface AddCombatantEvent extends BaseEvent {
+  type: 'addCombatant';
+  combatantId: string; // 例: プレイヤーは 10 から始まる ID
+  combatantName: string;
+}
+
+/** RemoveCombatant（type=04）イベント。cactbot LogGuide に準拠。 */
+export interface RemoveCombatantEvent extends BaseEvent {
+  type: 'removeCombatant';
+  combatantId: string;
+  combatantName: string;
+}
+
+/** 主要イベントに Add/RemoveCombatant を加えた拡張型（互換のため別名）。 */
+export type ExtendedParsedEvent =
+  | ParsedEvent
+  | AddCombatantEvent
+  | RemoveCombatantEvent;
+
 /**
  * すべてのイベントに共通のフィールド。
  */
@@ -60,8 +80,8 @@ const endRegex = /「(.+?)」の攻略を終了した。/;
  * Loki の生エントリ配列を、用途別のイベントへパースする。
  * @param entries Loki エントリ配列（時系列順を推奨）
  */
-export const parseEvents = (entries: RawLokiEntry[]): ParsedEvent[] => {
-  const events: ParsedEvent[] = [];
+export const parseEvents = (entries: RawLokiEntry[]): ExtendedParsedEvent[] => {
+  const events: ExtendedParsedEvent[] = [];
   for (const entry of entries) {
     const parsed = parseEntry(entry);
     if (!parsed) {
@@ -79,13 +99,17 @@ export const parseEvents = (entries: RawLokiEntry[]): ParsedEvent[] => {
 /**
  * 1 エントリを適切なイベントへとパースする内部関数。
  */
-const parseEntry = (entry: RawLokiEntry): ParsedEvent | ParsedEvent[] | null => {
+const parseEntry = (entry: RawLokiEntry): ExtendedParsedEvent | ExtendedParsedEvent[] | null => {
   const { normalized, stream } = entry;
   const parts = normalized.split('|');
   const type = parts[0];
   switch (type) {
     case '00':
       return parseSystemEvent(entry, parts);
+    case '03':
+      return parseAddCombatant(entry, parts);
+    case '04':
+      return parseRemoveCombatant(entry, parts);
     case '21':
     case '22':
       return parseStructuredAbility(entry, parts, stream);
@@ -144,6 +168,41 @@ const parseSystemEvent = (entry: RawLokiEntry, parts: string[]): ParsedEvent | n
 };
 
 /**
+ * AddCombatant（03）の最小解釈。
+ * parts[2]=ID, parts[3]=Name を採用し、それ以外の詳細は無視。
+ */
+const parseAddCombatant = (entry: RawLokiEntry, parts: string[]): AddCombatantEvent | null => {
+  if (parts.length < 4) return null;
+  const combatantId = parts[2] ?? '';
+  const combatantName = parts[3] ?? '';
+  return {
+    type: 'addCombatant',
+    entry,
+    timestampNs: BigInt(entry.timestampNs),
+    timestamp: entry.timestamp,
+    combatantId,
+    combatantName
+  } satisfies AddCombatantEvent;
+};
+
+/**
+ * RemoveCombatant（04）の最小解釈。
+ */
+const parseRemoveCombatant = (entry: RawLokiEntry, parts: string[]): RemoveCombatantEvent | null => {
+  if (parts.length < 4) return null;
+  const combatantId = parts[2] ?? '';
+  const combatantName = parts[3] ?? '';
+  return {
+    type: 'removeCombatant',
+    entry,
+    timestampNs: BigInt(entry.timestampNs),
+    timestamp: entry.timestamp,
+    combatantId,
+    combatantName
+  } satisfies RemoveCombatantEvent;
+};
+
+/**
  * 構造化アビリティログ（21/22）をイベントへ変換する。
  */
 const parseStructuredAbility = (
@@ -151,25 +210,40 @@ const parseStructuredAbility = (
   parts: string[],
   stream: Record<string, string>
 ): ParsedEvent | null => {
-  if (stream?.type === 'ability' || stream?.type === 'aoe') {
-    const actor = stream.actor ?? parts[3] ?? null;
-    const target = stream.target ?? parts[7] ?? null;
-    const amountStr = stream.amount ?? parts[33];
-    const amount = amountStr ? Number.parseInt(amountStr, 10) : NaN;
-    if (!Number.isNaN(amount) && actor) {
-      return {
-        type: 'damage',
-        source: 'message',
-        entry,
-        timestampNs: BigInt(entry.timestampNs),
-        timestamp: entry.timestamp,
-        actor,
-        target,
-        amount,
-        isCritical: stream.isCritical?.toLowerCase?.() === 'true',
-        isDirect: stream.isDirect?.toLowerCase?.() === 'true'
-      } satisfies DamageEvent;
+  // 21/22 は構造化アビリティ（単体/範囲）。stream に補助情報が入ることを想定し、無い場合は parts をフォールバックで解釈。
+  const actor = stream?.actor ?? parts[3] ?? null;
+  const target = stream?.target ?? parts[7] ?? null;
+  let amount: number | null = null;
+  const amountStr = stream?.amount ?? parts[33];
+  if (amountStr && /^\d+$/.test(amountStr)) {
+    amount = Number.parseInt(amountStr, 10);
+  }
+  if (amount == null || Number.isNaN(amount)) {
+    // 末尾側から最もらしい数値フィールドを検索（ダメージ量と想定）
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const v = parts[i];
+      if (/^\d+$/.test(v)) {
+        const n = Number.parseInt(v, 10);
+        if (Number.isFinite(n) && n >= 0 && n < 1_000_000_000) {
+          amount = n;
+          break;
+        }
+      }
     }
+  }
+  if (actor && typeof amount === 'number' && !Number.isNaN(amount)) {
+    return {
+      type: 'damage',
+      source: 'message',
+      entry,
+      timestampNs: BigInt(entry.timestampNs),
+      timestamp: entry.timestamp,
+      actor,
+      target,
+      amount,
+      isCritical: stream?.isCritical?.toLowerCase?.() === 'true',
+      isDirect: stream?.isDirect?.toLowerCase?.() === 'true'
+    } satisfies DamageEvent;
   }
 
   if (parts.length < 8) {
@@ -214,8 +288,8 @@ export const parseDamageMessage = (
   const isCritical = cleaned.includes('クリティカル');
   const isDirect = cleaned.includes('ダイレクトヒット');
 
-  const actorPattern = /^(?<actor>.+?)の攻撃(?: [^に]*)?\s*(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)?\s*(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
-  const directPattern = /^(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)\s*(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
+  const actorPattern = /^(?<actor>.+?)の攻撃(?: [^に]*?)?\s*(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)?\s*(?<target>[^に]+)に\d+(?:\([^)]*\))?ダメージ。$/;
+  const directPattern = /^(?:クリティカル＆ダイレクトヒット！|クリティカル！|ダイレクトヒット！)\s*(?<target>[^に]+)に\d+(?:\([^)]*\))?ダメージ。$/;
 
   const actorMatch = actorPattern.exec(cleaned);
   if (actorMatch?.groups) {
@@ -230,7 +304,7 @@ export const parseDamageMessage = (
     return { actor: null, target, amount, isCritical, isDirect };
   }
 
-  const simplePattern = /^(?<target>.+?)に\d+(?:\([^)]*\))?ダメージ。$/;
+  const simplePattern = /^(?<target>[^に]+)に\d+(?:\([^)]*\))?ダメージ。$/;
   const simpleMatch = simplePattern.exec(cleaned);
   if (simpleMatch?.groups) {
     const target = cleanupTarget(simpleMatch.groups.target);
@@ -257,3 +331,10 @@ export const isEndEvent = (event: ParsedEvent): event is EndEvent => event.type 
 export const isDamageEvent = (event: ParsedEvent): event is DamageEvent => event.type === 'damage';
 /** Type Guard: アビリティ */
 export const isAbilityEvent = (event: ParsedEvent): event is AbilityEvent => event.type === 'ability';
+
+/** Type Guard: AddCombatant */
+export const isAddCombatantEvent = (event: ExtendedParsedEvent): event is AddCombatantEvent =>
+  (event as any).type === 'addCombatant';
+/** Type Guard: RemoveCombatant */
+export const isRemoveCombatantEvent = (event: ExtendedParsedEvent): event is RemoveCombatantEvent =>
+  (event as any).type === 'removeCombatant';
