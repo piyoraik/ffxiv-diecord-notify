@@ -1,4 +1,5 @@
 import type { ChatInputCommandInteraction } from 'discord.js';
+import pkg from '../../package.json' assert { type: 'json' };
 import {
   summarizeLogsByDate,
   formatSummaryMessage,
@@ -121,3 +122,11 @@ export const handleDpsCommand = async (interaction: ChatInputCommandInteraction)
   });
 };
 
+/**
+ * `/version` コマンド: package.json のバージョンを返す。
+ */
+export const handleVersionCommand = async (interaction: ChatInputCommandInteraction): Promise<void> => {
+  const version = (pkg as any)?.version ?? 'unknown';
+  const builtAt = process.env.BUILD_TIMESTAMP ?? new Date().toISOString();
+  await interaction.reply({ content: `version: v${version} (built: ${builtAt})`, ephemeral: true });
+};

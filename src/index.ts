@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits } from 'discord.js';
 import { discordConfig } from './config.js';
-import { handleDpsCommand, handleTestCommand } from './discord/handlers.js';
+import { handleDpsCommand, handleTestCommand, handleVersionCommand } from './discord/handlers.js';
 
 const token = discordConfig.token();
 // ギルド関連イベントのみ要求する軽量クライアントを生成
@@ -23,6 +23,10 @@ client.on(Events.InteractionCreate, async interaction => {
 
   if (interaction.commandName === 'dps') {
     await handleDpsCommand(interaction);
+  }
+
+  if (interaction.commandName === 'version') {
+    await handleVersionCommand(interaction);
   }
 });
 

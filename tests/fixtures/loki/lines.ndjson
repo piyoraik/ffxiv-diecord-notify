@@ -1,0 +1,2 @@
+{"timestamp_ns":"1728380689000000000","line":"00|dummy|x|y|「ダンジョンA」の攻略を開始した。","stream":{"job":"ffxiv-dungeon","content":"ffxiv"}}
+{"timestamp_ns":"1728380699000000000","line":"00|dummy|x|y|「ダンジョンA」の攻略を終了した。","stream":{"job":"ffxiv-dungeon","content":"ffxiv"}}

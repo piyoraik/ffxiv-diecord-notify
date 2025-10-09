@@ -11,6 +11,7 @@ COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile
 
 FROM deps AS build
+ARG BUILD_TIMESTAMP
 COPY tsconfig.json ./
 COPY src ./src
 RUN yarn build
@@ -19,6 +20,8 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable
+ARG BUILD_TIMESTAMP
+ENV BUILD_TIMESTAMP=${BUILD_TIMESTAMP}
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json yarn.lock ./
 COPY --from=build /app/dist ./dist

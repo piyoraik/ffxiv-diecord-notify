@@ -56,7 +56,14 @@ export const dpsCommand = new SlashCommandBuilder()
       .setRequired(false)
   );
 
+// 登録対象のコマンド一覧はファイル末尾でまとめて公開します。
+
 /**
- * 登録対象のコマンド一覧。
+ * `/version` コマンド定義（package.json のバージョンを返す）。
  */
-export const commandList = [testCommand, dpsCommand];
+export const versionCommand = new SlashCommandBuilder()
+  .setName('version')
+  .setDescription('このボットのバージョンを表示します。');
+
+// 既存の配列に追加
+export const commandList = [testCommand, dpsCommand, versionCommand];
