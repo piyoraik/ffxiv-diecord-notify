@@ -7,6 +7,7 @@ ENV NODE_ENV=production
 FROM base AS deps
 ENV NODE_ENV=development
 RUN corepack enable
+RUN apt-get update && apt-get install -y --no-install-recommends openssl libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json yarn.lock ./
 COPY prisma ./prisma
 RUN yarn install --frozen-lockfile
@@ -22,9 +23,11 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 RUN corepack enable
+RUN apt-get update && apt-get install -y --no-install-recommends openssl libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 ARG BUILD_TIMESTAMP
 ENV BUILD_TIMESTAMP=${BUILD_TIMESTAMP}
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json yarn.lock ./
 COPY --from=build /app/dist ./dist
+COPY src/Definitions ./dist/Definitions
 CMD ["node", "dist/index.js"]
