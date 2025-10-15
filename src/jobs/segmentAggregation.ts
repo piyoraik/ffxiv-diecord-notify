@@ -1,15 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import { getPrismaClient, closePrismaClient } from '../db/prisma.js';
 import { ensureAggregationWindows, processPendingWindows } from '../services/segmentAggregation.js';
+import { logError, logInfo } from '../utils/logger.js';
 
 export const runSegmentAggregationJob = async (maxWindows?: number): Promise<void> => {
   const prisma = getPrismaClient();
   try {
+    logInfo('[segment-aggregation] job started', { maxWindows: maxWindows ?? null });
     await ensureAggregationWindows(prisma);
     const { processed, failed } = await processPendingWindows(prisma, {
       maxWindows
     });
-    console.log(`[segment-aggregation] processed=${processed} failed=${failed}`);
+    logInfo('[segment-aggregation] job completed', { processed, failed });
   } finally {
     await closePrismaClient();
   }
@@ -34,7 +36,7 @@ if (isMain) {
       process.exit(0);
     })
     .catch(error => {
-      console.error('[segment-aggregation] job failed', error);
+      logError('[segment-aggregation] job failed', undefined, error);
       process.exit(1);
     });
 }

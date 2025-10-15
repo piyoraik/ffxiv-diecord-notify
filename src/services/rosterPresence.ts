@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { logDebug, logError, logInfo, logWarn } from '../utils/logger.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DEFAULT_BACKFILL_HOURS = Number(process.env.ROSTER_BACKFILL_HOURS ?? '6');
@@ -119,6 +120,7 @@ export const processRosterPresence = async (
   });
 
   if (segments.length === 0) {
+    logDebug('[roster-aggregation] no segments pending', { limitDate: limitDate.toISOString() });
     return { processed: 0, failed: 0 };
   }
 
@@ -128,6 +130,14 @@ export const processRosterPresence = async (
   });
 
   const usedRoster = rosterMembers.length > 0 ? rosterMembers : [];
+  logInfo('[roster-aggregation] processing segments', {
+    segmentCount: segments.length,
+    rosterCount: usedRoster.length,
+    guildFilter: guildIds ?? null
+  });
+  if (usedRoster.length === 0) {
+    logWarn('[roster-aggregation] roster empty', { guildFilter: guildIds ?? null });
+  }
   const now = new Date();
   let processed = 0;
   let failed = 0;
@@ -150,11 +160,15 @@ export const processRosterPresence = async (
           }
         });
       });
+      logDebug('[roster-aggregation] segment resolved', {
+        segmentId: segment.segmentId,
+        entries: entries.length
+      });
       processed += 1;
     } catch (error) {
       failed += 1;
       const message = error instanceof Error ? error.message : String(error);
-      console.warn('[roster-aggregation] failed to process segment', segment.segmentId, message);
+      logWarn('[roster-aggregation] failed to process segment', { segmentId: segment.segmentId, error: message });
       try {
         await prisma.combatSegment.update({
           where: { segmentId: segment.segmentId },
@@ -169,5 +183,6 @@ export const processRosterPresence = async (
     }
   }
 
+  logInfo('[roster-aggregation] summary', { processed, failed });
   return { processed, failed };
 };

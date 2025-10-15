@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PrismaClient, AggregationWindow } from '@prisma/client';
 import { analyzeLogsBetween } from './combatAnalyzer.js';
+import { logDebug, logError, logInfo } from '../utils/logger.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 const BUFFER_MS = 15 * 60 * 1000;
@@ -55,6 +56,7 @@ export const ensureAggregationWindows = async (
 
   const windowsToCreate = buildWindowRange(limitStart, backfillHours, latestWindow?.windowStart ?? null);
   if (windowsToCreate.length === 0) {
+    logDebug('[segment-aggregation] no new windows', { limitStart: limitStart.toISOString() });
     return;
   }
 
@@ -73,6 +75,11 @@ export const ensureAggregationWindows = async (
     });
   });
   await Promise.all(operations);
+  logInfo('[segment-aggregation] windows ensured', {
+    created: windowsToCreate.length,
+    firstWindow: windowsToCreate[0]?.toISOString(),
+    lastWindow: windowsToCreate[windowsToCreate.length - 1]?.toISOString()
+  });
 };
 
 const acquirePendingWindow = async (prisma: PrismaClient): Promise<AggregationWindow | null> => {
@@ -199,9 +206,18 @@ const processWindow = async (
   const windowStart = new Date(window.windowStart);
   const windowEnd = new Date(window.windowEnd);
   const fetchEnd = new Date(windowEnd.getTime() + bufferMs);
+  logDebug('[segment-aggregation] start window processing', {
+    windowStart: windowStart.toISOString(),
+    windowEnd: windowEnd.toISOString(),
+    fetchEnd: fetchEnd.toISOString()
+  });
   const segments = await analyzeLogs(windowStart, fetchEnd);
   const filtered = filterSegmentsForWindow(windowStart, windowEnd, segments);
   await persistSegments(prisma, windowStart, filtered);
+  logDebug('[segment-aggregation] window persisted', {
+    windowStart: windowStart.toISOString(),
+    segmentCount: filtered.length
+  });
 };
 
 export const processPendingWindows = async (
@@ -218,6 +234,7 @@ export const processPendingWindows = async (
   while (processed + failed < maxWindows) {
     const window = await acquirePendingWindow(prisma);
     if (!window) {
+      logDebug('[segment-aggregation] no pending windows to process');
       break;
     }
 
@@ -231,6 +248,10 @@ export const processPendingWindows = async (
           lastError: null
         }
       });
+      logInfo('[segment-aggregation] window succeeded', {
+        windowStart: window.windowStart.toISOString(),
+        attempt: window.attempt + 1
+      });
       processed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -242,6 +263,10 @@ export const processPendingWindows = async (
           lastError: message.slice(0, MAX_ERROR_LENGTH)
         }
       });
+      logError('[segment-aggregation] window failed', {
+        windowStart: window.windowStart.toISOString(),
+        attempt: window.attempt + 1
+      }, error);
       failed += 1;
     }
   }
