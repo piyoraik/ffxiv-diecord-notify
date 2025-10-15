@@ -37,7 +37,7 @@ export const handleTestCommandWith = async (
     const roster = interaction.guild ? await listRoster(interaction.guild.id) : [];
     const rosterNames = new Set(roster.map(r => r.name));
     if (!summary) {
-      await interaction.editReply('Loki から対象日のログが見つかりませんでした。設定を確認してください。');
+      await interaction.editReply('集計済みの攻略が見つかりませんでした。設定を確認してください。');
       return;
     }
     // /test では DPS 上位などは出さず、純粋なタイムラインのみ出力

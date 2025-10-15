@@ -60,14 +60,9 @@ const AGGREGATION_START_OFFSET_MS = AGGREGATION_START_HOUR_JST * HOUR_IN_MS;
 // 00 の開始が短時間に重複出力されるケースを抑制するためのデバウンス（ns）
 const START_DEBOUNCE_NS = 120n * 1_000_000_000n; // 120 秒
 
-/**
- * 指定日の攻略ログを取得・解析し、日次の戦闘サマリへ変換する。
- * @param requestedDate YYYY-MM-DD 文字列（省略時は前日）
- */
-export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCombatSummary> => {
-  const { targetDate, startDate, endDate } = determineTimeWindow(requestedDate);
+export const analyzeLogsBetween = async (startDate: Date, endDate: Date): Promise<CombatSegmentSummary[]> => {
   const entries = await queryLogsInRange(startDate, endDate);
-  entries.sort((a, b) => BigInt(a.timestampNs) < BigInt(b.timestampNs) ? -1 : 1);
+  entries.sort((a, b) => (BigInt(a.timestampNs) < BigInt(b.timestampNs) ? -1 : 1));
 
   const parsedEvents = parseEvents(entries);
   const damageEvents = parsedEvents.filter(isDamageEvent) as ParsedDamageEvent[];
@@ -84,7 +79,7 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
   attachDamageToSegments(segments, damageEvents, playerNames, nameToJobCode, abilityJobsBySegment);
   assignOrdinals(segments);
 
-  const summaries: CombatSegmentSummary[] = segments.map(seg => ({
+  return segments.map(seg => ({
     id: seg.id,
     globalIndex: seg.globalIndex,
     ordinal: seg.ordinal,
@@ -96,10 +91,19 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
     players: seg.players,
     participants: seg.participants
   }));
+};
+
+/**
+ * 指定日の攻略ログを取得・解析し、日次の戦闘サマリへ変換する。
+ * @param requestedDate YYYY-MM-DD 文字列（省略時は前日）
+ */
+export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCombatSummary> => {
+  const { targetDate, startDate, endDate } = determineTimeWindow(requestedDate);
+  const segments = await analyzeLogsBetween(startDate, endDate);
 
   return {
     date: targetDate,
-    segments: summaries,
+    segments,
     availableDates: [targetDate]
   };
 };
@@ -107,7 +111,7 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
 /**
  * 集計対象の UTC 時刻範囲と日付表示用の文字列を決定する。
  */
-const determineTimeWindow = (
+export const determineTimeWindow = (
   requestedDate?: string
 ): { targetDate: string; startDate: Date; endDate: Date } => {
   const targetDate = requestedDate ? sanitizeDate(requestedDate) : computePreviousDateInJst();

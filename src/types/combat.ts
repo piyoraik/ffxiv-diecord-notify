@@ -34,6 +34,7 @@ export interface CombatSegmentSummary {
   durationMs: number | null;
   players: PlayerStats[];
   participants?: string[];
+  presenceResolved?: boolean;
 }
 
 /**

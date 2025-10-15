@@ -1,8 +1,8 @@
-import { fetchDailyCombat } from './services/combatAnalyzer.js';
 import { appSettings } from './config.js';
 import { type ActivityStatus, type CombatSegmentSummary, type DailyCombatSummary, type PlayerStats } from './types/combat.js';
 import { roleForJobCode } from './jobs.js';
 import { replaceJobTagsWithEmojis } from './emoji.js';
+import { fetchDailySummaryFromDb } from './db/segmentRepository.js';
 
 const TIME_ZONE = appSettings.timeZone();
 
@@ -32,6 +32,7 @@ export interface SummaryEntry {
   ordinal: number;
   globalIndex: number;
   participants?: string[];
+  presenceResolved?: boolean;
 }
 
 export interface DailySummary {
@@ -51,7 +52,7 @@ export interface SummaryResult {
  * @returns 要約データと利用可能日付一覧
  */
 export const summarizeLogsByDate = async (requestedDate?: string): Promise<SummaryResult> => {
-  const combat = await fetchDailyCombat(requestedDate);
+  const combat = await fetchDailySummaryFromDb(requestedDate);
   if (combat.segments.length === 0) {
     return {
       summary: {
@@ -72,7 +73,8 @@ export const summarizeLogsByDate = async (requestedDate?: string): Promise<Summa
     players: segment.players,
     ordinal: segment.ordinal,
     globalIndex: segment.globalIndex,
-    participants: segment.participants
+    participants: segment.participants,
+    presenceResolved: segment.presenceResolved
   }));
 
   const issues = collectIssues(entries);
@@ -99,11 +101,16 @@ export const formatSummaryMessage = (
 ): string => {
   const lines: string[] = [];
   lines.push(`📅 ${summary.date} の攻略履歴`);
+  let unresolvedCount = 0;
   if (summary.entries.length === 0) {
     lines.push('記録が見つかりませんでした。');
   } else {
     summary.entries.forEach(entry => {
       lines.push(renderSummaryEntry(entry, opts?.showTop !== false));
+      if (entry.presenceResolved === false) {
+        unresolvedCount += 1;
+        lines.push('    ※ 登録者参加情報を更新中です');
+      }
       // 登録プレイヤーの参加があれば併記
       if (opts?.rosterNames && entry.players.length > 0) {
         const matched = entry.players.filter(p => opts.rosterNames!.has(p.name));
@@ -117,6 +124,9 @@ export const formatSummaryMessage = (
   if (summary.issues.length > 0) {
     lines.push('⚠️ ペアリングに失敗したログがあります:');
     summary.issues.forEach(issue => lines.push(`  - ${issue}`));
+  }
+  if (unresolvedCount > 0) {
+    lines.push('⚠️ 一部の攻略で登録者参加情報が更新中です。時間をおいて再実行してください。');
   }
   if (availableDates.length > 1) {
     lines.push(`📚 利用可能な日付: ${availableDates.join(', ')}`);
@@ -186,7 +196,7 @@ export const formatDpsDetailMessage = (
   return replaceJobTagsWithEmojis(text, (opts as any)?.guild ?? null);
 };
 
-export const fetchDailyCombatSummary = fetchDailyCombat;
+export const fetchDailyCombatSummary = fetchDailySummaryFromDb;
 
 /**
  * 要約中に検知した不整合（開始や終了の欠落）を収集する。

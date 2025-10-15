@@ -35,7 +35,7 @@ test('handleTestCommandWith: no summary -> error message', async () => {
   // 1) defer, 2) edit with error text
   assert.equal(calls.length, 2);
   assert.equal(calls[1][0], 'edit');
-  assert.ok(String(calls[1][1]).includes('Loki から対象日のログが見つかりませんでした'));
+  assert.ok(String(calls[1][1]).includes('集計済みの攻略が見つかりませんでした'));
 });
 
 test('handleTestCommandWith: summary exists -> formatted content', async () => {
