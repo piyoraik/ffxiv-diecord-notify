@@ -8,14 +8,14 @@ FROM base AS deps
 ENV NODE_ENV=development
 RUN corepack enable
 COPY package.json yarn.lock ./
+COPY prisma ./prisma
 RUN yarn install --frozen-lockfile
+RUN yarn prisma:generate
 
 FROM deps AS build
 ARG BUILD_TIMESTAMP
 COPY tsconfig.json ./
 COPY src ./src
-COPY prisma ./prisma
-RUN yarn prisma:generate
 RUN yarn build
 
 FROM base AS runner
