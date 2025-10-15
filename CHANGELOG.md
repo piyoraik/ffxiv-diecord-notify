@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.32](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.31...v0.1.32) (2025-10-15)
+
+
+### Bug Fixes
+
+* deploy ([4dd71bd](https://github.com/piyoraik/ffxiv-diecord-notify/commit/4dd71bd54e194e9f3b72ce3686e9594e545fd335))
+
 ### [0.1.31](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.30...v0.1.31) (2025-10-15)
 
 
