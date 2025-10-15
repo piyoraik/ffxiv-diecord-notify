@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.36](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.35...v0.1.36) (2025-10-15)
+
+
+### Bug Fixes
+
+* prisma ([33a5b7a](https://github.com/piyoraik/ffxiv-diecord-notify/commit/33a5b7adb73121788cf4e1ef3a1982b6ae4b0f8f))
+
 ### [0.1.35](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.34...v0.1.35) (2025-10-15)
 
 ### [0.1.34](https://github.com/piyoraik/ffxiv-diecord-notify/compare/v0.1.33...v0.1.34) (2025-10-15)
