@@ -14,6 +14,8 @@ FROM deps AS build
 ARG BUILD_TIMESTAMP
 COPY tsconfig.json ./
 COPY src ./src
+COPY prisma ./prisma
+RUN yarn prisma:generate
 RUN yarn build
 
 FROM base AS runner

@@ -58,9 +58,11 @@ export const listRoster = async (
       emoji: true
     }
   });
-  return roster.map(({ name, jobCode, emoji }) => ({
-    name,
-    jobCode,
-    emoji
-  }));
+  return roster.map<{ name: string; jobCode?: string | null; emoji?: string | null }>(
+    ({ name, jobCode, emoji }) => ({
+      name,
+      jobCode,
+      emoji
+    })
+  );
 };
