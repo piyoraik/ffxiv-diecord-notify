@@ -16,6 +16,7 @@ import {
   type ExtendedParsedEvent
 } from '../parsers/events.js';
 import { jobCodeForId, roleForJobCode } from '../jobs.js';
+import { abilityJobMap } from '../data/abilityJobMap.js';
 import { DailyCombatSummary, CombatSegmentSummary, PlayerStats, ActivityStatus } from '../types/combat.js';
 
 const TIME_ZONE = appSettings.timeZone();
@@ -74,12 +75,13 @@ export const fetchDailyCombat = async (requestedDate?: string): Promise<DailyCom
   const addEvents = parsedEvents.filter(isAddCombatantEvent) as AddCombatantEvent[];
   const removeEvents = parsedEvents.filter(isRemoveCombatantEvent) as RemoveCombatantEvent[];
   const attrAddEvents = parsedEvents.filter(isAttributeAddEvent);
-  const { idToJobCode, nameToJobCode } = buildPlayerRegistry(addEvents, attrAddEvents);
+  const { idToJobCode, nameToJobCode, idToName } = buildPlayerRegistry(addEvents, attrAddEvents);
   const playerNames = collectPlayerNames(abilityEvents, damageEvents, addEvents);
   const segments = buildSegments(parsedEvents);
 
   assignParticipants(segments, addEvents, removeEvents);
-  attachDamageToSegments(segments, damageEvents, playerNames, nameToJobCode);
+  const abilityJobsBySegment = inferJobsFromAbilities(segments, abilityEvents, idToJobCode, nameToJobCode, idToName);
+  attachDamageToSegments(segments, damageEvents, playerNames, nameToJobCode, abilityJobsBySegment);
   assignOrdinals(segments);
 
   const summaries: CombatSegmentSummary[] = segments.map(seg => ({
@@ -225,6 +227,60 @@ const assignParticipants = (
   });
 };
 
+const inferJobsFromAbilities = (
+  segments: SegmentWork[],
+  abilityEvents: ParsedAbilityEvent[],
+  idToJobCode: Map<string, string>,
+  nameToJobCode: Map<string, string>,
+  idToName: Map<string, string>
+): Map<string, Map<string, string>> => {
+  const jobsBySegment = new Map<string, Map<string, string>>();
+  const preparedSegments = segments.filter(segment => segment.startNs && segment.endNs);
+
+  if (preparedSegments.length === 0 || abilityEvents.length === 0) {
+    return jobsBySegment;
+  }
+
+  for (const segment of preparedSegments) {
+    const segJobs = new Map<string, string>();
+    const startNs = segment.startNs!;
+    const endNs = segment.endNs!;
+    for (const event of abilityEvents) {
+      if (event.timestampNs < startNs || event.timestampNs > endNs) {
+        continue;
+      }
+      if (!isPlayerId(event.sourceId) || !event.abilityId) {
+        continue;
+      }
+      const abilityId = event.abilityId.toUpperCase();
+      const jobCode = abilityJobMap[abilityId];
+      if (!jobCode) {
+        continue;
+      }
+
+      const name = event.sourceName && event.sourceName.length > 0 ? event.sourceName : idToName.get(event.sourceId);
+      if (!name) {
+        continue;
+      }
+
+      segJobs.set(name, jobCode);
+      const currentIdJob = idToJobCode.get(event.sourceId);
+      if (currentIdJob !== jobCode) {
+        idToJobCode.set(event.sourceId, jobCode);
+      }
+      const currentNameJob = nameToJobCode.get(name);
+      if (currentNameJob !== jobCode) {
+        nameToJobCode.set(name, jobCode);
+      }
+    }
+    if (segJobs.size > 0) {
+      jobsBySegment.set(segment.id, segJobs);
+    }
+  }
+
+  return jobsBySegment;
+};
+
 /**
  * 03/261 Add からプレイヤーの JobCode を構築する。
  */
@@ -244,13 +300,22 @@ const buildPlayerRegistry = (
     if (e?.type !== 'attrAdd') continue;
     const code = jobCodeForId(e.jobId);
     const name = e.combatantName || idToName.get(e.combatantId);
-    if (code) {
-      idToJobCode.set(e.combatantId, code);
-      if (name) nameToJobCode.set(name, code);
+    if (!code) continue;
+    if (e.combatantId) {
+      const existingById = idToJobCode.get(e.combatantId);
+      if (!existingById) {
+        idToJobCode.set(e.combatantId, code);
+      }
+    }
+    if (name) {
+      const existingByName = nameToJobCode.get(name);
+      if (!existingByName) {
+        nameToJobCode.set(name, code);
+      }
     }
   }
 
-  return { idToJobCode, nameToJobCode };
+  return { idToJobCode, nameToJobCode, idToName };
 };
 
 /**
@@ -349,7 +414,8 @@ const attachDamageToSegments = (
   segments: SegmentWork[],
   damageEvents: ParsedDamageEvent[],
   playerNames: Set<string>,
-  nameToJobCode: Map<string, string> = new Map()
+  nameToJobCode: Map<string, string> = new Map(),
+  abilityJobsBySegment: Map<string, Map<string, string>> = new Map()
 ): void => {
   segments.forEach((segment, index) => {
     segment.globalIndex = index + 1;
@@ -392,7 +458,9 @@ const attachDamageToSegments = (
 
     const players: PlayerStats[] = Array.from(contributions.values())
       .map(stats => {
-        const jobCode = nameToJobCode.get(stats.name);
+        const abilityJobs = abilityJobsBySegment.get(segment.id);
+        const abilityJob = abilityJobs?.get(stats.name);
+        const jobCode = abilityJob ?? nameToJobCode.get(stats.name);
         const role = roleForJobCode(jobCode);
         return ({
           name: stats.name,

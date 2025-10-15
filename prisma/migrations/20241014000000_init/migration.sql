@@ -1,0 +1,4 @@
+-- Baseline migration for existing schema.
+-- The necessary tables (aggregation_windows, combat_segments, etc.) were created via sql/migrations/001_create_aggregation_tables.sql.
+-- Mark this migration as applied by running:
+--   yarn prisma migrate resolve --applied 20241014000000_init
