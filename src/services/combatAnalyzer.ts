@@ -85,7 +85,7 @@ export const analyzeLogsBetween = async (startDate: Date, endDate: Date): Promis
     idToName,
     nameJobHistory
   );
-  attachDamageToSegments(segments, damageEvents, playerNames, nameJobHistory, abilityJobsBySegment);
+  attachDamageToSegments(segments, damageEvents, playerNames, nameJobHistory, nameToJobCode, abilityJobsBySegment);
   assignOrdinals(segments);
 
   return segments.map(seg => ({
@@ -442,6 +442,7 @@ const attachDamageToSegments = (
   damageEvents: ParsedDamageEvent[],
   playerNames: Set<string>,
   nameJobHistory: Map<string, { jobCode: string; timestampNs: bigint }> = new Map(),
+  nameToJobCode: Map<string, string> = new Map(),
   abilityJobsBySegment: Map<string, Map<string, string>> = new Map()
 ): void => {
   segments.forEach((segment, index) => {
@@ -498,6 +499,9 @@ const attachDamageToSegments = (
               jobCode = history.jobCode;
             }
           }
+        }
+        if (!jobCode) {
+          jobCode = nameToJobCode.get(stats.name);
         }
         const role = roleForJobCode(jobCode);
         return ({

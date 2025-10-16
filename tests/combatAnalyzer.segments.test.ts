@@ -86,7 +86,7 @@ test('attachDamageToSegments: aggregates DPS per player within segment bounds', 
     mkDamage(3500n, 'Bob', 500),
     mkDamage(5000n, 'Alice', 999) // out of segment -> ignored
   ];
-  __testables.attachDamageToSegments(segments, dmg, new Set(['Alice', 'Bob']), new Map());
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Alice', 'Bob']), new Map(), new Map());
   assert.equal(segments[0].players.length, 2);
   const names = segments[0].players.map((p: any) => p.name);
   assert.deepEqual(names, ['Alice', 'Bob']);
@@ -136,7 +136,7 @@ test('attachDamageToSegments falls back to recent job history within window', as
   const history = new Map<string, { jobCode: string; timestampNs: bigint }>([
     ['Piyo Lambda', { jobCode: 'PLD', timestampNs: 1500n }]
   ]);
-  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), history);
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), history, new Map([['Piyo Lambda', 'PLD']]));
   assert.equal(segments[0].players[0].jobCode, 'PLD');
 });
 
@@ -151,6 +151,6 @@ test('attachDamageToSegments ignores stale job history outside window', async ()
   const staleHistory = new Map<string, { jobCode: string; timestampNs: bigint }>([
     ['Piyo Lambda', { jobCode: 'PCT', timestampNs: 0n }]
   ]);
-  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), staleHistory);
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), staleHistory, new Map());
   assert.equal(segments[0].players[0].jobCode, undefined);
 });
