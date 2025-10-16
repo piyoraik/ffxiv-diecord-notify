@@ -24,7 +24,7 @@ spec:
             - name: ghcr-pull
           containers:
             - name: roster-aggregation
-              image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.37
+              image: ghcr.io/piyoraik/ffxiv-diecord-notify:latest
               imagePullPolicy: Always
               command: ["node", "dist/jobs/rosterAggregation.js"]
               envFrom:

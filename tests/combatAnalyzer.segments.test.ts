@@ -86,7 +86,7 @@ test('attachDamageToSegments: aggregates DPS per player within segment bounds', 
     mkDamage(3500n, 'Bob', 500),
     mkDamage(5000n, 'Alice', 999) // out of segment -> ignored
   ];
-  __testables.attachDamageToSegments(segments, dmg, new Set(['Alice', 'Bob']));
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Alice', 'Bob']), new Map());
   assert.equal(segments[0].players.length, 2);
   const names = segments[0].players.map((p: any) => p.name);
   assert.deepEqual(names, ['Alice', 'Bob']);
@@ -125,4 +125,32 @@ test('buildPlayerRegistry updates job mapping when attrAdd reports new job', asy
   const { nameToJobCode, idToJobCode } = __testables.buildPlayerRegistry(addEvents, attrAddEvents);
   assert.equal(nameToJobCode.get('Piyo Lambda'), 'PLD');
   assert.equal(idToJobCode.get('10123456'), 'PLD');
+});
+
+test('attachDamageToSegments falls back to recent job history within window', async () => {
+  const mod = await import('../src/services/combatAnalyzer.js?jobHistory');
+  const { __testables } = mod as any;
+  const events = [mkStart(1000n, 'A'), mkEnd(4000n, 'A')];
+  const segments = __testables.buildSegments(events);
+  const dmg = [mkDamage(2000n, 'Piyo Lambda', 1500)];
+  const history = new Map<string, { jobCode: string; timestampNs: bigint }>([
+    ['Piyo Lambda', { jobCode: 'PLD', timestampNs: 1500n }]
+  ]);
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), history);
+  assert.equal(segments[0].players[0].jobCode, 'PLD');
+});
+
+test('attachDamageToSegments ignores stale job history outside window', async () => {
+  const mod = await import('../src/services/combatAnalyzer.js?jobHistoryStale');
+  const { __testables } = mod as any;
+  const startNs = 7n * 60n * 60n * 1_000_000_000n; // 7 hours in ns
+  const endNs = startNs + 10_000_000_000n;
+  const events = [mkStart(startNs, 'A'), mkEnd(endNs, 'A')];
+  const segments = __testables.buildSegments(events);
+  const dmg = [mkDamage(startNs + 5_000_000_000n, 'Piyo Lambda', 500)];
+  const staleHistory = new Map<string, { jobCode: string; timestampNs: bigint }>([
+    ['Piyo Lambda', { jobCode: 'PCT', timestampNs: 0n }]
+  ]);
+  __testables.attachDamageToSegments(segments, dmg, new Set(['Piyo Lambda']), staleHistory);
+  assert.equal(segments[0].players[0].jobCode, undefined);
 });

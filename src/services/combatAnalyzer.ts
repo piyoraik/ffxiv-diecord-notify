@@ -59,6 +59,8 @@ const AGGREGATION_END_HOUR_JST = appSettings.aggregationEndHourJst();
 const AGGREGATION_START_OFFSET_MS = AGGREGATION_START_HOUR_JST * HOUR_IN_MS;
 // 00 の開始が短時間に重複出力されるケースを抑制するためのデバウンス（ns）
 const START_DEBOUNCE_NS = 120n * 1_000_000_000n; // 120 秒
+const JOB_HISTORY_LOOKBACK_NS = 6n * 60n * 60n * 1_000_000_000n; // 6 時間分を許容
+const JOB_HISTORY_LOOKAHEAD_NS = 10n * 60n * 1_000_000_000n; // 10 分の先行分も許容
 
 export const analyzeLogsBetween = async (startDate: Date, endDate: Date): Promise<CombatSegmentSummary[]> => {
   const entries = await queryLogsInRange(startDate, endDate);
@@ -70,13 +72,20 @@ export const analyzeLogsBetween = async (startDate: Date, endDate: Date): Promis
   const addEvents = parsedEvents.filter(isAddCombatantEvent) as AddCombatantEvent[];
   const removeEvents = parsedEvents.filter(isRemoveCombatantEvent) as RemoveCombatantEvent[];
   const attrAddEvents = parsedEvents.filter(isAttributeAddEvent);
-  const { idToJobCode, nameToJobCode, idToName } = buildPlayerRegistry(addEvents, attrAddEvents);
+  const { idToJobCode, nameToJobCode, idToName, nameJobHistory } = buildPlayerRegistry(addEvents, attrAddEvents);
   const playerNames = collectPlayerNames(abilityEvents, damageEvents, addEvents);
   const segments = buildSegments(parsedEvents);
 
   assignParticipants(segments, addEvents, removeEvents);
-  const abilityJobsBySegment = inferJobsFromAbilities(segments, abilityEvents, idToJobCode, nameToJobCode, idToName);
-  attachDamageToSegments(segments, damageEvents, playerNames, nameToJobCode, abilityJobsBySegment);
+  const abilityJobsBySegment = inferJobsFromAbilities(
+    segments,
+    abilityEvents,
+    idToJobCode,
+    nameToJobCode,
+    idToName,
+    nameJobHistory
+  );
+  attachDamageToSegments(segments, damageEvents, playerNames, nameJobHistory, abilityJobsBySegment);
   assignOrdinals(segments);
 
   return segments.map(seg => ({
@@ -236,7 +245,8 @@ const inferJobsFromAbilities = (
   abilityEvents: ParsedAbilityEvent[],
   idToJobCode: Map<string, string>,
   nameToJobCode: Map<string, string>,
-  idToName: Map<string, string>
+  idToName: Map<string, string>,
+  nameJobHistory: Map<string, { jobCode: string; timestampNs: bigint }>
 ): Map<string, Map<string, string>> => {
   const jobsBySegment = new Map<string, Map<string, string>>();
   const preparedSegments = segments.filter(segment => segment.startNs && segment.endNs);
@@ -276,6 +286,10 @@ const inferJobsFromAbilities = (
       if (currentNameJob !== jobCode) {
         nameToJobCode.set(name, jobCode);
       }
+      const history = nameJobHistory.get(name);
+      if (!history || history.timestampNs <= event.timestampNs || history.jobCode !== jobCode) {
+        nameJobHistory.set(name, { jobCode, timestampNs: event.timestampNs });
+      }
     }
     if (segJobs.size > 0) {
       jobsBySegment.set(segment.id, segJobs);
@@ -295,6 +309,7 @@ const buildPlayerRegistry = (
   const idToJobCode = new Map<string, string>();
   const idToName = new Map<string, string>();
   const nameToJobCode = new Map<string, string>();
+  const nameJobHistory = new Map<string, { jobCode: string; timestampNs: bigint }>();
 
   addEvents.forEach(a => {
     if (a.combatantId && a.combatantName) idToName.set(a.combatantId, a.combatantName);
@@ -313,13 +328,21 @@ const buildPlayerRegistry = (
     }
     if (name) {
       const existingByName = nameToJobCode.get(name);
-      if (!existingByName || existingByName !== code) {
+      const shouldUpdate = !existingByName || existingByName !== code;
+      if (shouldUpdate) {
         nameToJobCode.set(name, code);
+      }
+      const timestampNs = typeof e.timestampNs === 'bigint' ? e.timestampNs : BigInt(e.timestampNs ?? e.entry?.timestampNs ?? '0');
+      if (timestampNs > 0n) {
+        const history = nameJobHistory.get(name);
+        if (!history || history.timestampNs <= timestampNs || (shouldUpdate && history.jobCode !== code)) {
+          nameJobHistory.set(name, { jobCode: code, timestampNs });
+        }
       }
     }
   }
 
-  return { idToJobCode, nameToJobCode, idToName };
+  return { idToJobCode, nameToJobCode, idToName, nameJobHistory };
 };
 
 /**
@@ -418,7 +441,7 @@ const attachDamageToSegments = (
   segments: SegmentWork[],
   damageEvents: ParsedDamageEvent[],
   playerNames: Set<string>,
-  nameToJobCode: Map<string, string> = new Map(),
+  nameJobHistory: Map<string, { jobCode: string; timestampNs: bigint }> = new Map(),
   abilityJobsBySegment: Map<string, Map<string, string>> = new Map()
 ): void => {
   segments.forEach((segment, index) => {
@@ -464,7 +487,18 @@ const attachDamageToSegments = (
       .map(stats => {
         const abilityJobs = abilityJobsBySegment.get(segment.id);
         const abilityJob = abilityJobs?.get(stats.name);
-        const jobCode = abilityJob ?? nameToJobCode.get(stats.name);
+        let jobCode = abilityJob;
+        if (!jobCode) {
+          const history = nameJobHistory.get(stats.name);
+          if (history && segment.startNs && segment.endNs) {
+            const withinWindow =
+              history.timestampNs >= segment.startNs - JOB_HISTORY_LOOKBACK_NS &&
+              history.timestampNs <= segment.endNs + JOB_HISTORY_LOOKAHEAD_NS;
+            if (withinWindow) {
+              jobCode = history.jobCode;
+            }
+          }
+        }
         const role = roleForJobCode(jobCode);
         return ({
           name: stats.name,
