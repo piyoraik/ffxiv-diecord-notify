@@ -307,13 +307,13 @@ const buildPlayerRegistry = (
     if (!code) continue;
     if (e.combatantId) {
       const existingById = idToJobCode.get(e.combatantId);
-      if (!existingById) {
+      if (!existingById || existingById !== code) {
         idToJobCode.set(e.combatantId, code);
       }
     }
     if (name) {
       const existingByName = nameToJobCode.get(name);
-      if (!existingByName) {
+      if (!existingByName || existingByName !== code) {
         nameToJobCode.set(name, code);
       }
     }
@@ -510,5 +510,6 @@ export const __testables = {
   assignOrdinals,
   attachDamageToSegments,
   collectPlayerNames,
-  assignParticipants
+  assignParticipants,
+  buildPlayerRegistry
 };

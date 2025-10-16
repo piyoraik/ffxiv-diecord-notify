@@ -35,6 +35,26 @@ const mkDamage = (ns: bigint, actor: string, amount: number): DamageEvent => ({
   isDirect: false
 });
 
+const mkAdd = (ns: bigint, id: string, name: string) => ({
+  type: 'addCombatant' as const,
+  combatantId: id,
+  combatantName: name,
+  timestampNs: ns,
+  timestamp: new Date(Number(ns / 1_000_000n)),
+  entry: { timestampNs: String(ns), timestamp: new Date(Number(ns / 1_000_000n)), normalized: '', stream: {} }
+});
+
+const mkAttrAdd = (ns: bigint, id: string, name: string, jobId: number) => ({
+  type: 'attrAdd' as const,
+  combatantId: id,
+  combatantName: name,
+  jobId,
+  attributes: {},
+  timestampNs: ns,
+  timestamp: new Date(Number(ns / 1_000_000n)),
+  entry: { timestampNs: String(ns), timestamp: new Date(Number(ns / 1_000_000n)), normalized: '', stream: {} }
+});
+
 // 開始/終了の組み合わせから 2 セグメントを構築し、ordinal が 1,2 となることを確認
 test('buildSegments + assignOrdinals: pairs start/end and orders with ordinals', async () => {
   const mod = await import('../src/services/combatAnalyzer.js?seg1');
@@ -92,4 +112,17 @@ test('assignParticipants: uses add/remove within timeline to estimate attendees'
   // Alice removed before start → not included; Bob added during segment → included
   assert.equal(segments[0].participants.includes('Alice'), false);
   assert.equal(segments[0].participants.includes('Bob'), true);
+});
+
+test('buildPlayerRegistry updates job mapping when attrAdd reports new job', async () => {
+  const mod = await import('../src/services/combatAnalyzer.js?jobChange');
+  const { __testables } = mod as any;
+  const addEvents = [mkAdd(1000n, '10123456', 'Piyo Lambda')];
+  const attrAddEvents = [
+    mkAttrAdd(1500n, '10123456', 'Piyo Lambda', 42), // PCT
+    mkAttrAdd(2000n, '10123456', 'Piyo Lambda', 19) // PLD
+  ];
+  const { nameToJobCode, idToJobCode } = __testables.buildPlayerRegistry(addEvents, attrAddEvents);
+  assert.equal(nameToJobCode.get('Piyo Lambda'), 'PLD');
+  assert.equal(idToJobCode.get('10123456'), 'PLD');
 });

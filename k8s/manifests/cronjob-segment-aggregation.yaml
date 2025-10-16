@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: discord-ff14-bot-segment
+  namespace: discord-bot
+  labels:
+    app: discord-ff14-bot
+    job: segment-aggregation
+spec:
+  schedule: "5 * * * *"
+  timeZone: Asia/Tokyo
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: discord-ff14-bot
+            job: segment-aggregation
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-pull
+          containers:
+            - name: segment-aggregation
+              image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.37
+              imagePullPolicy: Always
+              command: ["node", "dist/jobs/segmentAggregation.js"]
+              envFrom:
+                - secretRef:
+                    name: discord-ff14-bot-secrets
+                - configMapRef:
+                    name: discord-ff14-bot-config
+              env:
+                - name: LOG_LEVEL
+                  value: info
+                # 必要に応じてバックフィル時間や処理ウィンドウ数を調整
+                # - name: AGGREGATION_BACKFILL_HOURS
+                #   value: "6"
+                # - name: AGGREGATION_MAX_WINDOWS
+                #   value: "12"
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 256Mi
+                limits:
+                  cpu: 400m
+                  memory: 512Mi

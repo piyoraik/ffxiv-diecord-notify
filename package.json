@@ -15,6 +15,7 @@
     "docker:build:local": "BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ) docker buildx build --load --build-arg BUILD_TIMESTAMP=$BUILD_TIMESTAMP -t discord-ff14-bot:local .",
     "segment:aggregate": "tsx src/jobs/segmentAggregation.ts",
     "roster:aggregate": "tsx src/jobs/rosterAggregation.ts",
+    "aggregate": "tsx bin/aggregate.ts",
     "deploy:commands": "tsx src/registerCommands.main.ts",
     "daily:summary": "tsx src/jobs/dailySummary.ts",
     "release": "standard-version --no-verify",

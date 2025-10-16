@@ -6,7 +6,7 @@ metadata:
   labels:
     app: discord-ff14-bot
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: discord-ff14-bot
@@ -19,7 +19,7 @@ spec:
         - name: ghcr-pull
       containers:
         - name: bot
-          image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.19
+          image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.37
           imagePullPolicy: Always
           envFrom:
             - secretRef:
@@ -27,12 +27,12 @@ spec:
             - configMapRef:
                 name: discord-ff14-bot-config
           # 必要に応じて直接 env を指定する場合の例（Secret/ConfigMap 優先）
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: discord-ff14-bot-secrets
-                  key: DATABASE_URL
+          # env:
+          #   - name: DATABASE_URL
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: discord-ff14-bot-secrets
+          #         key: DATABASE_URL
           resources:
             requests:
               cpu: 50m

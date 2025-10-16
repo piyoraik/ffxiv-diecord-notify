@@ -42,6 +42,7 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 | `DATABASE_URL` | PostgreSQL 接続URL | 例: `postgres://user:pass@host:5432/dbname`（優先） |
 | `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` | PostgreSQL 接続（個別指定） | `DATABASE_URL` 未設定時に使用 |
 | `PGSSLMODE` | SSL モード | 例: `require`（クラスタ仕様に合わせて設定） |
+| `LOG_LEVEL` | ログレベル (`debug`/`info`/`warn`/`error`) | 未指定時は `info` |
 
 `.env.example` を `.env` にコピーし、上記を設定してください（`.env` は `.gitignore` 済み）。
 
@@ -50,9 +51,9 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
 ## ローカル開発フロー
 
 1. **依存関係をインストール**
-   ```bash
-   yarn install
-   ```
+ ```bash
+ yarn install
+ ```
 2. **Slash コマンドを登録**
    ```bash
    yarn deploy:commands
@@ -62,11 +63,20 @@ Node.js 22 / TypeScript / discord.js をベースに、Docker・Kubernetes・Flu
    yarn dev        # ホットリロード
 # もしくは
 yarn build
-   yarn start
-   ```
+ yarn start
+ ```
 
-4. **push 前にローカルテスト（Husky）**
-   - `git push` 時に `yarn build && yarn test` を自動実行（`.husky/pre-push`）
+5. **DB 集計のローカル確認**
+  ```bash
+  yarn segment:aggregate        # Loki -> PostgreSQL（combat_segments 等）
+  yarn roster:aggregate         # combat_segments -> segment_roster_presence
+  yarn aggregate windows --max-windows 5   # サブコマンド形式の CLI
+  yarn aggregate roster --max-segments 20 --guild 624277000961523732
+  ```
+  - 上記コマンドは Prisma を利用して PostgreSQL へ集計を書き込みます。`LOG_LEVEL=debug` を併用すると詳細ログが JSON で出力されます。
+
+6. **push 前にローカルテスト（Husky）**
+  - `git push` 時に `yarn build && yarn test` を自動実行（`.husky/pre-push`）
    - ローカルに `logs/logs.json` があれば実ログ回帰も実行されます
    - 実ログを使わず高速に回したい場合は `LOGS_JSON_PATH=__missing__ git push` で実ログ回帰のみ skip できます
 
@@ -220,6 +230,13 @@ kubectl apply -f k8s/manifests/cronjob.yaml
 - `AGGREGATION_START_HOUR_JST` と `AGGREGATION_END_HOUR_JST` により、「JST X:00 〜 （必要なら翌日へ）JST Y:00」を定義。
 - 例: `10` と `8` → 「JST 10:00 〜 翌日 08:00」。
 - 例: `10` と `10` → 「JST 10:00 〜 翌日 10:00」。
+
+### ログ出力
+- すべてのジョブ/CLI は JSON 形式で標準出力へログを書き出します。
+  ```json
+  {"level":"info","time":"2025-10-15T05:35:16.173Z","message":"[roster-aggregation] job completed","meta":{"processed":1,"failed":0}}
+  ```
+- `LOG_LEVEL=debug` を設定することで詳細なデバッグログ（Loki から取得した時間帯など）も出力されます。Kubernetes 上では `kubectl logs` でそのまま確認できます。
 
 ---
 

@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: discord-ff14-bot-roster
+  namespace: discord-bot
+  labels:
+    app: discord-ff14-bot
+    job: roster-aggregation
+spec:
+  schedule: "15 * * * *"
+  timeZone: Asia/Tokyo
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: discord-ff14-bot
+            job: roster-aggregation
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+            - name: ghcr-pull
+          containers:
+            - name: roster-aggregation
+              image: ghcr.io/piyoraik/ffxiv-diecord-notify:v0.1.37
+              imagePullPolicy: Always
+              command: ["node", "dist/jobs/rosterAggregation.js"]
+              envFrom:
+                - secretRef:
+                    name: discord-ff14-bot-secrets
+                - configMapRef:
+                    name: discord-ff14-bot-config
+              env:
+                - name: LOG_LEVEL
+                  value: info
+                # ギルドごとの突合対象を制限する場合は以下を設定
+                # - name: ROSTER_GUILD_IDS
+                #   value: "123456789012345678,987654321098765432"
+                # - name: ROSTER_MAX_SEGMENTS
+                #   value: "20"
+              resources:
+                requests:
+                  cpu: 150m
+                  memory: 192Mi
+                limits:
+                  cpu: 300m
+                  memory: 384Mi
